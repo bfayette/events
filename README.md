@@ -42,6 +42,10 @@ src/
     ├── turnkey/             # Turnkey sub-org provisioning & stamp proxy
     ├── validation/          # TOTP gate verification & anti-replay cache
     └── aa/                  # ERC-4337 UserOp intent builders & Paymaster routing
+docs/
+└── E2E_GUIDE.md             # Detailed sandbox manual & automated E2E testing guide
+scripts/
+└── e2e-test.js              # Automated E2E verification test runner
 ```
 
 ---
@@ -79,7 +83,26 @@ src/
 
 ---
 
-## API Endpoints
+## Testing & Sandbox E2E Verification
+
+### 1. Automated Unit & Integration Tests (Jest)
+Run all Jest test suites covering pass mapping, Turnkey sub-org creation, TOTP gate checks, and ERC-4337 intent builders:
+```bash
+npm test
+```
+
+### 2. Automated Sandbox E2E Suite
+Run the automated end-to-end sandbox verification runner:
+```bash
+npm run test:e2e
+```
+
+### 3. Manual E2E Testing Guide
+For step-by-step cURL commands and sandbox verification flows, consult [docs/E2E_GUIDE.md](docs/E2E_GUIDE.md).
+
+---
+
+## API Endpoints Overview
 
 ### 1. Events & Loyalty
 - `GET /api/events` — Retrieve list of events
@@ -104,13 +127,3 @@ src/
 - `POST /api/aa/transfer-ticket` — Build ticket transfer UserOp intent
 - `POST /api/aa/redeem-points` — Build points redemption UserOp intent
 - `POST /api/aa/dispatch` — Relay signed UserOp to Paymaster / Bundler
-
----
-
-## Running Automated Tests
-
-Run the complete Jest test suite covering pass generation, Turnkey provisioning, gate verification, and ERC-4337 intent routing:
-
-```bash
-npm test
-```

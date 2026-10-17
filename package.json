@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "cross-env NODE_ENV=development node src/server.js",
     "start": "cross-env NODE_ENV=production node src/server.js",
-    "test": "jest --runInBand --detectOpenHandles"
+    "test": "jest --runInBand --detectOpenHandles",
+    "test:e2e": "node scripts/e2e-test.js"
   },
   "keywords": [
     "turnkey",
