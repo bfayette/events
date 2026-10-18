@@ -21,7 +21,8 @@ router.get('/tickets/:id/apple-pass', async (req, res) => {
     res.set('Content-Disposition', `attachment; filename=ticket-${ticketId}.pkpass`);
     return res.send(pkpassBuffer);
   } catch (error) {
-    return res.status(500).json({ message: 'Error generating Apple Pass', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Error generating Apple Pass' });
   }
 });
 
@@ -40,7 +41,8 @@ router.get('/tickets/:id/google-pass-url', (req, res) => {
 
     return res.json({ saveUrl, claims: googleClaims });
   } catch (error) {
-    return res.status(500).json({ message: 'Error generating Google Pass URL', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Error generating Google Pass URL' });
   }
 });
 
@@ -60,7 +62,8 @@ router.get('/loyalty/:id/apple-pass', async (req, res) => {
     res.set('Content-Disposition', `attachment; filename=loyalty-${loyaltyId}.pkpass`);
     return res.send(pkpassBuffer);
   } catch (error) {
-    return res.status(500).json({ message: 'Error generating Apple Loyalty Pass', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Error generating Apple Loyalty Pass' });
   }
 });
 
@@ -78,7 +81,8 @@ router.get('/loyalty/:id/google-pass-url', (req, res) => {
 
     return res.json({ saveUrl, claims: googleClaims });
   } catch (error) {
-    return res.status(500).json({ message: 'Error generating Google Loyalty Pass URL', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Error generating Google Loyalty Pass URL' });
   }
 });
 

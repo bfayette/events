@@ -7,7 +7,7 @@ const events = new Map([
     'evt_101',
     {
       id: 'evt_101',
-      name: 'Crypto Tech Summit 2025',
+      name: 'Tech Summit 2025',
       venue: 'Main Arena, San Francisco',
       date: '2025-09-15T18:00:00Z',
       capacity: 500
@@ -21,7 +21,7 @@ const tickets = new Map([
     {
       id: 'tkt_001',
       eventId: 'evt_101',
-      ownerAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      ownerContact: 'alex@example.com',
       secret: 'JBSWY3DPEHPK3PXP', // Base32 secret for TOTP
       seat: 'A-12',
       section: 'VIP',
@@ -35,7 +35,7 @@ const loyaltyAccounts = new Map([
     'loy_001',
     {
       id: 'loy_001',
-      ownerAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      ownerContact: 'alex@example.com',
       tier: 'Gold VIP',
       points: 1250,
       accountNumber: 'ACC-88991122'
@@ -45,9 +45,6 @@ const loyaltyAccounts = new Map([
 
 // Append-only event audit log
 const auditEventLog = [];
-
-// Merkle anchors store
-const merkleAnchors = new Map();
 
 /**
  * Computes SHA-256 hash of arbitrary payload
@@ -69,7 +66,6 @@ function logEvent({ ticketId, action, actor = 'system', payload = {}, statusTran
     actor,
     payloadHash,
     statusTransition,
-    anchorId: null,
     createdAt: new Date().toISOString()
   };
   auditEventLog.push(eventRecord);
@@ -83,33 +79,12 @@ function getEventsForTicket(ticketId) {
   return auditEventLog.filter(e => e.ticketId === ticketId);
 }
 
-/**
- * Retrieves unanchored events from the log
- */
-function getUnanchoredEvents() {
-  return auditEventLog.filter(e => e.anchorId === null);
-}
-
-/**
- * Marks events as anchored with an anchor ID
- */
-function markEventsAnchored(eventIds, anchorId) {
-  for (const eventRecord of auditEventLog) {
-    if (eventIds.includes(eventRecord.id)) {
-      eventRecord.anchorId = anchorId;
-    }
-  }
-}
-
 module.exports = {
   events,
   tickets,
   loyaltyAccounts,
   auditEventLog,
-  merkleAnchors,
   logEvent,
   getEventsForTicket,
-  getUnanchoredEvents,
-  markEventsAnchored,
   hashPayload
 };

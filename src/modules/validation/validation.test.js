@@ -11,7 +11,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     eventsService.tickets.set('tkt_001', {
       id: 'tkt_001',
       eventId: 'evt_101',
-      ownerAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      ownerContact: 'user1@example.com',
       secret: 'JBSWY3DPEHPK3PXP',
       seat: 'A-12',
       section: 'VIP',
@@ -41,7 +41,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     eventsService.tickets.set('tkt_combined', {
       id: 'tkt_combined',
       eventId: 'evt_101',
-      ownerAddress: '0x456',
+      ownerContact: 'user2@example.com',
       secret: 'JBSWY3DPEHPK3PXP',
       status: 'ISSUED'
     });
@@ -62,7 +62,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     eventsService.tickets.set('tkt_replay', {
       id: 'tkt_replay',
       eventId: 'evt_101',
-      ownerAddress: '0x123',
+      ownerContact: 'user3@example.com',
       secret: 'JBSWY3DPEHPK3PXP',
       status: 'ISSUED'
     });
@@ -95,13 +95,12 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     expect(res.body.message).toContain('Invalid or expired TOTP token');
   });
 
-  describe('Signed Receipts (JWS & EIP-712) and Offline Reconciliation', () => {
+  describe('Signed Receipts (JWS) and Offline Reconciliation', () => {
     it('should issue JWS signed receipt containing minimal required claims', async () => {
       const res = await request(app)
         .post('/api/passes/issue-receipt')
         .send({
           ticketId: 'tkt_001',
-          format: 'JWS',
           ttlSeconds: 120
         });
 
@@ -116,25 +115,10 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
       expect(res.body.receipt.token).toBeDefined();
     });
 
-    it('should issue EIP-712 signed receipt with structured typed data signature', async () => {
-      const res = await request(app)
-        .post('/api/passes/issue-receipt')
-        .send({
-          ticketId: 'tkt_001',
-          format: 'EIP712',
-          ttlSeconds: 60
-        });
-
-      expect(res.statusCode).toEqual(201);
-      expect(res.body.receipt.format).toEqual('EIP712');
-      expect(res.body.receipt.signature).toMatch(/^0x[a-f0-9]{64}$/);
-      expect(res.body.receipt.message.ticket_id).toEqual('tkt_001');
-    });
-
     it('should verify valid JWS receipt and block replay when scanned second time', async () => {
       const receiptRes = await request(app)
         .post('/api/passes/issue-receipt')
-        .send({ ticketId: 'tkt_001', format: 'JWS' });
+        .send({ ticketId: 'tkt_001' });
 
       const receipt = receiptRes.body.receipt.token;
 
@@ -157,14 +141,14 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
       eventsService.tickets.set('tkt_offline_1', {
         id: 'tkt_offline_1',
         eventId: 'evt_101',
-        ownerAddress: '0xabc',
+        ownerContact: 'user4@example.com',
         secret: 'JBSWY3DPEHPK3PXP',
         status: 'ISSUED'
       });
 
       const receiptRes = await request(app)
         .post('/api/passes/issue-receipt')
-        .send({ ticketId: 'tkt_offline_1', format: 'JWS' });
+        .send({ ticketId: 'tkt_offline_1' });
 
       const receiptToken = receiptRes.body.receipt.token;
 
@@ -191,14 +175,14 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
       eventsService.tickets.set('tkt_conflict_1', {
         id: 'tkt_conflict_1',
         eventId: 'evt_101',
-        ownerAddress: '0xdef',
+        ownerContact: 'user5@example.com',
         secret: 'JBSWY3DPEHPK3PXP',
         status: 'CHECKED_IN' // Already checked in online earlier
       });
 
       const receiptRes = await request(app)
         .post('/api/passes/issue-receipt')
-        .send({ ticketId: 'tkt_conflict_1', format: 'JWS' });
+        .send({ ticketId: 'tkt_conflict_1' });
 
       const reconcileRes = await request(app)
         .post('/api/passes/reconcile')
@@ -219,7 +203,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     it('should reject receipt when operator key is revoked (compromise scenario)', async () => {
       const receiptRes = await request(app)
         .post('/api/passes/issue-receipt')
-        .send({ ticketId: 'tkt_001', format: 'JWS' });
+        .send({ ticketId: 'tkt_001' });
 
       const receiptToken = receiptRes.body.receipt.token;
 

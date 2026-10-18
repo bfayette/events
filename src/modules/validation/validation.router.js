@@ -28,14 +28,15 @@ router.post('/verify', (req, res) => {
 
     return res.status(status).json(result);
   } catch (error) {
-    return res.status(500).json({ message: 'Gate verification failed', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Gate verification failed' });
   }
 });
 
-// POST /api/passes/issue-receipt (Issue KMS-signed JWS or EIP-712 receipt)
+// POST /api/passes/issue-receipt (Issue KMS-signed JWS receipt)
 router.post('/issue-receipt', (req, res) => {
   try {
-    const { ticketId, format = 'JWS', ttlSeconds = 60, issuer, schemaVersion } = req.body;
+    const { ticketId, ttlSeconds = 60, issuer, schemaVersion } = req.body;
 
     if (!ticketId) {
       return res.status(400).json({ message: 'ticketId is required' });
@@ -46,19 +47,15 @@ router.post('/issue-receipt', (req, res) => {
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
-    let receipt;
-    if (format === 'EIP712') {
-      receipt = signerService.generateEIP712Receipt({ ticketId, ttlSeconds, issuer, schemaVersion });
-    } else {
-      receipt = signerService.generateJWSReceipt({ ticketId, ttlSeconds, issuer, schemaVersion });
-    }
+    const receipt = signerService.generateJWSReceipt({ ticketId, ttlSeconds, issuer, schemaVersion });
 
     return res.status(201).json({
       message: 'Signed receipt generated successfully',
       receipt
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to generate signed receipt', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Failed to generate signed receipt' });
   }
 });
 
@@ -73,7 +70,8 @@ router.post('/verify-receipt', (req, res) => {
     const verifyRes = validationService.verifyOfflineReceipt(receipt);
     return res.status(verifyRes.status).json(verifyRes);
   } catch (error) {
-    return res.status(500).json({ message: 'Receipt verification failed', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Receipt verification failed' });
   }
 });
 
@@ -93,7 +91,8 @@ router.post('/reconcile', (req, res) => {
       ...outcome
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Reconciliation failed', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Reconciliation failed' });
   }
 });
 
@@ -107,7 +106,8 @@ router.get('/tickets/:id/events', (req, res) => {
       events: ticketEvents
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to retrieve ticket audit events', error: error.message });
+    console.error(error);
+    return res.status(500).json({ message: 'Failed to retrieve ticket audit events' });
   }
 });
 

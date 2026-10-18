@@ -1,6 +1,6 @@
 # Operational Security & System Checklist
 
-This document provides operational guidance for managing operator signing keys, KMS/HSM usage, rotation, access control, monitoring, and incident response for the DB-first ticketing and loyalty platform.
+This document provides operational guidance for managing operator signing keys, KMS/HSM usage, rotation, access control, monitoring, and incident response for the ticketing and loyalty platform.
 
 ---
 
@@ -8,9 +8,8 @@ This document provides operational guidance for managing operator signing keys, 
 
 - **No Raw Key Storage:** Raw private keys, seed phrases, `.p12` files, or service account secrets MUST NEVER be checked into the repository or stored in plaintext database fields or logs.
 - **Hardware Security Modules (HSMs) & Cloud KMS:**
-  - Operator signing keys used for generating short-lived signed receipts, PassKit archives, or ERC-4337 transaction relaying MUST be hosted in a managed Cloud KMS (AWS KMS, GCP KMS, Azure Key Vault) or dedicated HSM.
+  - Operator signing keys used for generating short-lived signed receipts or PassKit archives MUST be hosted in a managed Cloud KMS (AWS KMS, GCP KMS, Azure Key Vault) or dedicated HSM.
   - Signing operations MUST be performed inside the KMS envelope via RPC / API calls (e.g. Asymmetric Sign).
-  - WebAuthn / Passkey credentials MUST be processed through dedicated sub-organization providers (e.g., Turnkey) without backend secret storage.
 
 ---
 
@@ -33,11 +32,9 @@ This document provides operational guidance for managing operator signing keys, 
 
 - **Operator Scoping:**
   - Backend operator accounts operate under strict, scoped authority bound to specific events, venues, and time windows.
-  - Unrestricted asset transfers, arbitrary contract executions, or monetary withdrawals are explicitly blocked by system policies.
 - **Per-Operation Constraints:**
   - Rate limiting on ticket pass generation and gate verification endpoints.
   - Value thresholds for loyalty point adjustments or ticket status overrides requiring multi-party operator confirmation or step-up authentication.
-  - Contract and address allowlisting for any on-chain interactions or ERC-4337 Paymaster submissions.
 
 ---
 
@@ -46,7 +43,7 @@ This document provides operational guidance for managing operator signing keys, 
 - **Dynamic TOTP Gates:** Short-lived rotating TOTP codes (30-second window) with single-use replay caches to prevent reused scans.
 - **Signed Receipt Nonces:**
   - Every offline/online signed receipt MUST contain a unique cryptographic `nonce` (UUID v4 / CSPRNG bytes).
-  - Verifiers maintain a local bloom filter or single-use nonce cache covering the token's lifetime (`expires_at`).
+  - Verifiers maintain a single-use nonce cache covering the token's lifetime (`expires_at`).
 - **Short TTL Enforceability:** Signed receipts carry a tight Time-To-Live (e.g., 30s to 120s) to limit the exposure window of offline tokens.
 
 ---
@@ -57,7 +54,6 @@ This document provides operational guidance for managing operator signing keys, 
   - **Duplicate Scan Spikes:** Alert if multiple duplicate/replay HTTP 409 responses occur within a short window at a single verifier terminal.
   - **Clock Skew Alerts:** Monitor NTP time synchronization across all edge validator devices. Reject receipts with timestamps drifting beyond ±15 seconds.
   - **KMS Anomaly Alerts:** Alert on unexpected spikes in KMS signing requests or unauthorized API calls attempting to use revoked keys.
-  - **Paymaster / On-chain Spend Alerts:** Monitor gas and fee limits for ERC-4337 execution, alerting on threshold breaches.
 
 ---
 
@@ -68,6 +64,6 @@ This document provides operational guidance for managing operator signing keys, 
 2. **Key Invalidation:**
    - Revoke the compromised operator `key_id` via backend configuration and KMS policy disablement.
 3. **Audit Trail Review:**
-   - Inspect the append-only `events` database log and on-chain Merkle anchors to determine the exact timestamp, actor, and scope of unauthorized actions.
+   - Inspect the database log to determine the exact timestamp, actor, and scope of unauthorized actions.
 4. **Reconciliation & Recovery:**
    - Invalidate compromised passes, reissue clean signed receipts with fresh keys to legitimate ticket holders, and resync edge verifiers.
