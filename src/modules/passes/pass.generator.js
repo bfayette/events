@@ -1,6 +1,7 @@
 const JSZip = require('jszip');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { config } = require('../../config');
 
 class PassGeneratorService {
   /**
@@ -43,7 +44,7 @@ class PassGeneratorService {
    * Generates Google Wallet JWT Save URL
    */
   static createGoogleWalletSaveUrl(googleJwtClaims) {
-    const secret = process.env.GOOGLE_WALLET_SECRET || 'dev_secret_key_for_testing_123456';
+    const secret = config.googleWalletSecret;
     const signedJwt = jwt.sign(googleJwtClaims, secret, { algorithm: 'HS256' });
 
     return `https://pay.google.com/gp/v/save/${signedJwt}`;

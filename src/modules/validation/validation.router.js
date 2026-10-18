@@ -33,7 +33,7 @@ router.post('/verify', (req, res) => {
   }
 });
 
-// POST /api/passes/issue-receipt (Issue KMS-signed JWS receipt)
+// POST /api/passes/issue-receipt (Issue signed JWS receipt)
 router.post('/issue-receipt', (req, res) => {
   try {
     const { ticketId, format = 'JWS', ttlSeconds = 60, issuer, schemaVersion } = req.body;

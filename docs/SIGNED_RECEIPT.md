@@ -9,7 +9,7 @@ This document details the signed receipt format, claim requirements, short TTL c
 In offline or intermittent connectivity environments (such as event gates, turnstiles, or underground venues), real-time database queries are not always guaranteed. To allow secure, fraud-resistant offline entry, the backend issues short-lived **Signed Receipts**.
 
 Key requirements:
-- **Tamper-proof:** Signed by a KMS-backed operator key.
+- **Tamper-proof:** Signed by an operator key loaded from environment configuration.
 - **Short-lived:** Tight TTL (e.g., 30s – 120s) to minimize window for reuse.
 - **Minimal payload:** Compact format suitable for fast QR code rendering and optical scanning.
 - **Auditable:** Offline scans produce receipt logs that are later reconciled atomically against the central database.

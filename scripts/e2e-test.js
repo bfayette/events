@@ -91,7 +91,7 @@ async function runE2ETests() {
 
     // 3. Dynamic TOTP Gate Check-In & Anti-Replay
     console.log('\n[3/4] Testing Dynamic TOTP Gate Verification & Anti-Replay Cache...');
-    const secret = 'JBSWY3DPEHPK3PXP'; // Test secret for tkt_001
+    const secret = eventsService.tickets.get('tkt_001').secret;
     const totpToken = authenticator.generate(secret);
 
     // Initial Gate Scan -> Success 200
@@ -120,7 +120,7 @@ async function runE2ETests() {
     });
     console.assert(receiptIssuance.statusCode === 201, 'Receipt issuance failed');
     console.assert(receiptIssuance.body.receipt.format === 'JWS', 'Expected JWS receipt');
-    console.log('  ✅ KMS-signed JWS receipt generated');
+    console.log('  ✅ Signed JWS receipt generated');
 
     const reconcile = await makeRequest('POST', '/api/passes/reconcile', {
       verifierId: 'turnstile_e2e_01',
