@@ -238,7 +238,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
       const receiptToken = receiptRes.body.receipt.token;
 
       // Simulate emergency operator key revocation
-      signerService.revokeKey('op-key-2025-v1');
+      signerService.revokeKey(receiptRes.body.receipt.kid);
 
       const verifyRes = await request(app)
         .post('/api/passes/verify-receipt')

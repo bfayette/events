@@ -1,11 +1,11 @@
-const dotenv = require('dotenv');
-const envFile = `.env${process.env.NODE_ENV ? `.${process.env.NODE_ENV}` : ''}`;
-dotenv.config({ path: envFile });
+try {
+  const { config } = require('./config');
+  const app = require('./app');
 
-const app = require('./app');
-
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+  app.listen(config.port, () => {
+    console.log(`Server is running on port ${config.port}`);
+  });
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}

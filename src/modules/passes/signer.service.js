@@ -1,14 +1,19 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { config } = require('../../config');
 
 class SignerService {
   constructor() {
-    // Default operator KMS secret and active Key ID
-    this.activeKeyId = process.env.OPERATOR_KEY_ID || 'op-key-2025-v1';
-    this.keys = new Map([
-      ['op-key-2025-v1', process.env.OPERATOR_SECRET || 'kms-operator-secret-2025-key-v1'],
-      ['op-key-2025-v2', 'kms-operator-secret-2025-key-v2-backup']
-    ]);
+    this.activeKeyId = config.operatorKeyId;
+    this.keys = new Map();
+    this.keys.set(config.operatorKeyId, config.operatorSecret);
+
+    if (config.operatorPreviousKeys) {
+      for (const [kid, secret] of Object.entries(config.operatorPreviousKeys)) {
+        this.keys.set(kid, secret);
+      }
+    }
+
     // Dynamic Key Revocation List (KRL)
     this.revokedKeys = new Set();
   }

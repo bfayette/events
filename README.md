@@ -32,15 +32,55 @@ A headless ticketing and loyalty platform built with Node.js and Express. It iss
 
 ---
 
+## Configuration
+
+The application uses validated environment configuration. In production environments, required secrets must be supplied and meet length and security constraints. In development and test environments, missing secrets are automatically generated as ephemeral random secrets per process.
+
+### Environment Variables
+
+| Variable | Required in Production? | Default | Description |
+|---|---|---|---|
+| `NODE_ENV` | No | `development` | Application environment (`development`, `test`, `production`). |
+| `PORT` | No | `3000` | HTTP server listening port. |
+| `OPERATOR_KEY_ID` | No | `op-key-1` | Active key ID (`kid`) used for signing JWS receipts. |
+| `OPERATOR_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for active operator key receipt signing. Must not be a known insecure default. |
+| `OPERATOR_PREVIOUS_KEYS` | No | `{}` | JSON map of previous `kid` to secret used solely for verifying receipts during key rotation. Each secret must be at least 32 chars. |
+| `GOOGLE_WALLET_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for Google Wallet save URL JWT signatures. Must not be a known insecure default. |
+| `SEED_DEMO_DATA` | No | `true` in dev/test, `false` in prod | Populates in-memory stores with demo fixtures outside production. Setting `SEED_DEMO_DATA=true` in production fails startup. |
+
+### Generating Secrets
+
+Secrets can be generated using OpenSSL:
+```bash
+openssl rand -base64 48
+```
+
+### Key Rotation Procedure
+
+To rotate signing keys without invalidating unexpired offline receipts:
+1. Generate a new secret using `openssl rand -base64 48`.
+2. Update `OPERATOR_KEY_ID` to the new key ID (e.g. `op-key-2`) and `OPERATOR_SECRET` to the new secret.
+3. Move the previous active key ID and secret into `OPERATOR_PREVIOUS_KEYS` as a JSON string:
+   ```bash
+   OPERATOR_PREVIOUS_KEYS='{"op-key-1":"<old_secret_value>"}'
+   ```
+4. Key verification will automatically verify receipts signed with previous keys, while all new receipts are signed exclusively with the active key.
+5. Once all receipts signed by the old key have expired, remove the key entry from `OPERATOR_PREVIOUS_KEYS`.
+
+Note on Receipt Signing: Receipts are HS256-signed using an operator secret loaded from the environment. Asymmetric signing is planned for future phases.
+
+---
+
 ## Directory Structure
 
 ```
 src/
 ├── app.js                   # Main Express application configuration
+├── config.js                # Central validated configuration loader
 ├── server.js                # Server entrypoint
 ├── app.test.js              # Server health test
 └── modules/
-    ├── events/              # Event, ticket, and loyalty data models + services
+    ├── events/              # Event, ticket, and loyalty data models + seed fixtures
     ├── passes/              # Apple .pkpass and Google Wallet pass generation
     └── validation/          # TOTP gate verification and anti-replay logic
 
@@ -124,7 +164,7 @@ Note: These endpoints currently have no authentication and use in-memory storage
 
 ### 4. Gate Verification & Offline Receipts
 - `POST /api/passes/verify` — Validate a scanned TOTP code and update ticket status
-- `POST /api/passes/issue-receipt` — Issue KMS-signed JWS receipt
+- `POST /api/passes/issue-receipt` — Issue signed JWS receipt
 - `POST /api/passes/verify-receipt` — Verify a single JWS receipt token
 - `POST /api/passes/reconcile` — Batch reconcile offline scan receipts
 - `GET /api/passes/tickets/:id/events` — Retrieve audit event history for a ticket
