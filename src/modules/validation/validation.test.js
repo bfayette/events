@@ -95,7 +95,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     expect(res.body.message).toContain('Invalid or expired TOTP token');
   });
 
-  describe('Signed Receipts (JWS & EIP-712) and Offline Reconciliation', () => {
+  describe('Signed Receipts and Offline Reconciliation', () => {
     it('should issue JWS signed receipt containing minimal required claims', async () => {
       const res = await request(app)
         .post('/api/passes/issue-receipt')
@@ -116,19 +116,33 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
       expect(res.body.receipt.token).toBeDefined();
     });
 
-    it('should issue EIP-712 signed receipt with structured typed data signature', async () => {
+    it('should return 400 when unsupported receipt format is requested on /issue-receipt', async () => {
       const res = await request(app)
         .post('/api/passes/issue-receipt')
         .send({
           ticketId: 'tkt_001',
-          format: 'EIP712',
+          format: 'UNSUPPORTED_FORMAT',
           ttlSeconds: 60
         });
 
-      expect(res.statusCode).toEqual(201);
-      expect(res.body.receipt.format).toEqual('EIP712');
-      expect(res.body.receipt.signature).toMatch(/^0x[a-f0-9]{64}$/);
-      expect(res.body.receipt.message.ticket_id).toEqual('tkt_001');
+      expect(res.statusCode).toEqual(400);
+      expect(res.body.message).toEqual("Unsupported receipt format. Only 'JWS' is supported");
+    });
+
+    it('should return 400 when an unsupported receipt payload object is submitted to /verify-receipt', async () => {
+      const res = await request(app)
+        .post('/api/passes/verify-receipt')
+        .send({
+          receipt: {
+            format: 'UNSUPPORTED_FORMAT',
+            message: { ticket_id: 'tkt_001' },
+            signature: '0x123'
+          }
+        });
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body.valid).toBe(false);
+      expect(res.body.reason).toEqual('Unsupported or missing receipt payload format');
     });
 
     it('should verify valid JWS receipt and block replay when scanned second time', async () => {
