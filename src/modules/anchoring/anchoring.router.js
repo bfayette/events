@@ -9,7 +9,8 @@ router.post('/anchor', (req, res) => {
     const result = anchoringService.anchorPendingEvents({ chainId, operator });
     return res.status(200).json(result);
   } catch (error) {
-    return res.status(500).json({ message: 'Anchoring batch failed', error: error.message });
+    console.error('Anchoring batch failed:', error);
+    return res.status(500).json({ message: 'Anchoring batch failed' });
   }
 });
 
@@ -19,7 +20,8 @@ router.get('/anchors', (req, res) => {
     const anchors = anchoringService.getAllAnchors();
     return res.status(200).json({ count: anchors.length, anchors });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to retrieve anchors', error: error.message });
+    console.error('Failed to retrieve anchors:', error);
+    return res.status(500).json({ message: 'Failed to retrieve anchors' });
   }
 });
 
@@ -32,7 +34,8 @@ router.get('/anchors/:id', (req, res) => {
     }
     return res.status(200).json(anchor);
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to retrieve anchor', error: error.message });
+    console.error('Failed to retrieve anchor:', error);
+    return res.status(500).json({ message: 'Failed to retrieve anchor' });
   }
 });
 

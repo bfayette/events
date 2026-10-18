@@ -28,7 +28,8 @@ router.post('/verify', (req, res) => {
 
     return res.status(status).json(result);
   } catch (error) {
-    return res.status(500).json({ message: 'Gate verification failed', error: error.message });
+    console.error('Gate verification failed:', error);
+    return res.status(500).json({ message: 'Gate verification failed' });
   }
 });
 
@@ -58,7 +59,8 @@ router.post('/issue-receipt', (req, res) => {
       receipt
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to generate signed receipt', error: error.message });
+    console.error('Failed to generate signed receipt:', error);
+    return res.status(500).json({ message: 'Failed to generate signed receipt' });
   }
 });
 
@@ -73,7 +75,8 @@ router.post('/verify-receipt', (req, res) => {
     const verifyRes = validationService.verifyOfflineReceipt(receipt);
     return res.status(verifyRes.status).json(verifyRes);
   } catch (error) {
-    return res.status(500).json({ message: 'Receipt verification failed', error: error.message });
+    console.error('Receipt verification failed:', error);
+    return res.status(500).json({ message: 'Receipt verification failed' });
   }
 });
 
@@ -93,7 +96,8 @@ router.post('/reconcile', (req, res) => {
       ...outcome
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Reconciliation failed', error: error.message });
+    console.error('Reconciliation failed:', error);
+    return res.status(500).json({ message: 'Reconciliation failed' });
   }
 });
 
@@ -107,7 +111,8 @@ router.get('/tickets/:id/events', (req, res) => {
       events: ticketEvents
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to retrieve ticket audit events', error: error.message });
+    console.error('Failed to retrieve ticket audit events:', error);
+    return res.status(500).json({ message: 'Failed to retrieve ticket audit events' });
   }
 });
 

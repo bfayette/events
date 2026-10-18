@@ -9,7 +9,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # Environment variables
-.env
+.env*
+!.env.example
 
 # Cache directories for popular tools
 .cache/
@@ -37,7 +38,3 @@ coverage/
 
 # npm workspaces
 .pnpm-store/
-
-# Environment variables
-#.env
-

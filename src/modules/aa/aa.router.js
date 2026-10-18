@@ -29,7 +29,8 @@ router.post('/transfer-ticket', (req, res) => {
       userOp
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to build transfer intent', error: error.message });
+    console.error('Failed to build transfer intent:', error);
+    return res.status(500).json({ message: 'Failed to build transfer intent' });
   }
 });
 
@@ -64,7 +65,8 @@ router.post('/redeem-points', (req, res) => {
       userOp
     });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to build redemption intent', error: error.message });
+    console.error('Failed to build redemption intent:', error);
+    return res.status(500).json({ message: 'Failed to build redemption intent' });
   }
 });
 
@@ -106,7 +108,8 @@ router.post('/dispatch', async (req, res) => {
       result: dispatchResult
     });
   } catch (error) {
-    return res.status(500).json({ message: 'UserOperation dispatch failed', error: error.message });
+    console.error('UserOperation dispatch failed:', error);
+    return res.status(500).json({ message: 'UserOperation dispatch failed' });
   }
 });
 

@@ -144,11 +144,20 @@ For step-by-step cURL commands and sandbox verification flows, consult [docs/E2E
 - `GET /api/users/:userId/wallet` — Retrieve wallet metadata if configured for the integration
 - `POST /api/turnkey/proxy` — Relay client-signed stamps to Turnkey API
 
-### 4. Gate Verification
+### 4. Gate Verification & Receipts
 - `POST /api/passes/verify` — Validate a scanned code and update ticket status
   - Body payload: `{ "ticketId": "tkt_001", "totpToken": "123456" }` or `{ "payload": "tkt_001:123456" }`
+- `POST /api/passes/issue-receipt` — Issue KMS-signed JWS or EIP-712 offline receipt
+- `POST /api/passes/verify-receipt` — Verify a single signed offline receipt
+- `POST /api/passes/reconcile` — Batch offline scan reconciliation
+- `GET /api/passes/tickets/:id/events` — Retrieve ticket audit event log history
 
-### 5. ERC-4337 Gasless Intents
+### 5. Merkle Log Anchoring
+- `POST /api/anchoring/anchor` — Trigger Merkle batch anchoring of pending event logs
+- `GET /api/anchoring/anchors` — Retrieve list of all Merkle anchor batches
+- `GET /api/anchoring/anchors/:id` — Get details for a specific Merkle anchor batch
+
+### 6. ERC-4337 Gasless Intents
 - `POST /api/aa/transfer-ticket` — Build a ticket transfer intent
 - `POST /api/aa/redeem-points` — Build a points redemption intent
 - `POST /api/aa/dispatch` — Relay a signed UserOperation to a Paymaster / Bundler
