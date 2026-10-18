@@ -33,7 +33,7 @@ router.post('/verify', (req, res) => {
   }
 });
 
-// POST /api/passes/issue-receipt (Issue KMS-signed JWS or EIP-712 receipt)
+// POST /api/passes/issue-receipt (Issue KMS-signed JWS receipt)
 router.post('/issue-receipt', (req, res) => {
   try {
     const { ticketId, format = 'JWS', ttlSeconds = 60, issuer, schemaVersion } = req.body;
@@ -42,17 +42,16 @@ router.post('/issue-receipt', (req, res) => {
       return res.status(400).json({ message: 'ticketId is required' });
     }
 
+    if (format !== 'JWS') {
+      return res.status(400).json({ message: "Unsupported receipt format. Only 'JWS' is supported" });
+    }
+
     const ticketRecord = eventsService.tickets.get(ticketId);
     if (!ticketRecord) {
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
-    let receipt;
-    if (format === 'EIP712') {
-      receipt = signerService.generateEIP712Receipt({ ticketId, ttlSeconds, issuer, schemaVersion });
-    } else {
-      receipt = signerService.generateJWSReceipt({ ticketId, ttlSeconds, issuer, schemaVersion });
-    }
+    const receipt = signerService.generateJWSReceipt({ ticketId, ttlSeconds, issuer, schemaVersion });
 
     return res.status(201).json({
       message: 'Signed receipt generated successfully',

@@ -115,7 +115,7 @@ class SignerService {
       if (err.name === 'TokenExpiredError') {
         return { valid: false, reason: 'Signed receipt has expired' };
       }
-      return { valid: false, reason: `Signature verification failed: ${err.message}` };
+      return { valid: false, reason: 'Signature verification failed' };
     }
 
     // 4. Verify minimal required claims
@@ -137,110 +137,6 @@ class SignerService {
     }
 
     return { valid: true, claims, kid };
-  }
-
-  /**
-   * Generates an EIP-712 structured signed receipt payload
-   */
-  generateEIP712Receipt({ ticketId, ttlSeconds = 60, issuer = 'urn:events:operator:main', schemaVersion = '1.0' }) {
-    const now = Math.floor(Date.now() / 1000);
-    const kid = this.activeKeyId;
-    const secret = this.keys.get(kid);
-
-    if (this.revokedKeys.has(kid)) {
-      throw new Error(`Cannot sign receipt: Operator key ${kid} is revoked`);
-    }
-
-    const domain = {
-      name: 'TicketingPlatform',
-      version: '1.0',
-      chainId: 1,
-      verifyingContract: '0x0000000000000000000000000000000000000000'
-    };
-
-    const types = {
-      SignedReceipt: [
-        { name: 'ticket_id', type: 'string' },
-        { name: 'issued_at', type: 'uint256' },
-        { name: 'expires_at', type: 'uint256' },
-        { name: 'nonce', type: 'string' },
-        { name: 'issuer', type: 'string' },
-        { name: 'schema_version', type: 'string' }
-      ]
-    };
-
-    const message = {
-      ticket_id: ticketId,
-      issued_at: now,
-      expires_at: now + ttlSeconds,
-      nonce: crypto.randomUUID(),
-      issuer,
-      schema_version: schemaVersion
-    };
-
-    // Digest signature computed over canonical structured data
-    const digest = crypto
-      .createHmac('sha256', secret)
-      .update(JSON.stringify({ domain, types, message, kid }))
-      .digest('hex');
-
-    const signature = `0x${digest}`;
-
-    return {
-      format: 'EIP712',
-      kid,
-      domain,
-      types,
-      message,
-      signature
-    };
-  }
-
-  /**
-   * Verifies an EIP-712 receipt payload
-   */
-  verifyEIP712Receipt(receipt) {
-    if (!receipt || !receipt.message || !receipt.signature || !receipt.kid) {
-      return { valid: false, reason: 'Malformed EIP-712 receipt payload' };
-    }
-
-    const { kid, domain, types, message, signature } = receipt;
-
-    // 1. Check KRL
-    if (this.revokedKeys.has(kid)) {
-      return { valid: false, reason: `Operator key ${kid} has been revoked` };
-    }
-
-    const secret = this.keys.get(kid);
-    if (!secret) {
-      return { valid: false, reason: `Unknown operator key ID ${kid}` };
-    }
-
-    // 2. Validate required claims
-    const requiredClaims = ['ticket_id', 'issued_at', 'expires_at', 'nonce', 'issuer', 'schema_version'];
-    for (const claim of requiredClaims) {
-      if (message[claim] === undefined || message[claim] === null) {
-        return { valid: false, reason: `Missing required claim in EIP-712 message: ${claim}` };
-      }
-    }
-
-    // 3. Expiration check
-    const now = Math.floor(Date.now() / 1000);
-    if (now > message.expires_at) {
-      return { valid: false, reason: 'Signed receipt has expired' };
-    }
-
-    // 4. Recompute signature digest
-    const expectedDigest = crypto
-      .createHmac('sha256', secret)
-      .update(JSON.stringify({ domain, types, message, kid }))
-      .digest('hex');
-
-    if (signature !== `0x${expectedDigest}`) {
-      return { valid: false, reason: 'Invalid EIP-712 signature digest' };
-    }
-
-    return { valid: true, claims: message, kid };
   }
 }
 

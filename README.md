@@ -107,16 +107,24 @@ For step-by-step cURL commands and sandbox verification flows, consult [docs/E2E
 
 ## API Endpoints Overview
 
-### 1. Events & Loyalty
+Note: These endpoints currently have no authentication and use in-memory storage (they are being replaced in later phases).
+
+### 1. Healthcheck
+- `GET /health` — Check API service status
+
+### 2. Events & Loyalty
 - `GET /api/events` — Retrieve list of events
 - `GET /api/events/:id` — Retrieve event details
 
-### 2. Wallet Passes (Apple & Google)
+### 3. Wallet Passes (Apple & Google)
 - `GET /api/tickets/:id/apple-pass` — Download Apple Wallet `.pkpass` file
 - `GET /api/tickets/:id/google-pass-url` — Get "Save to Google Wallet" link
 - `GET /api/loyalty/:id/apple-pass` — Download Apple Loyalty `.pkpass` file
 - `GET /api/loyalty/:id/google-pass-url` — Get Google Wallet Loyalty link
 
-### 3. Gate Verification
-- `POST /api/passes/verify` — Validate a scanned code and update ticket status
-  - Body payload: `{ "ticketId": "tkt_001", "totpToken": "123456" }` or `{ "payload": "tkt_001:123456" }`
+### 4. Gate Verification & Offline Receipts
+- `POST /api/passes/verify` — Validate a scanned TOTP code and update ticket status
+- `POST /api/passes/issue-receipt` — Issue KMS-signed JWS receipt
+- `POST /api/passes/verify-receipt` — Verify a single JWS receipt token
+- `POST /api/passes/reconcile` — Batch reconcile offline scan receipts
+- `GET /api/passes/tickets/:id/events` — Retrieve audit event history for a ticket

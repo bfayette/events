@@ -46,9 +46,6 @@ const loyaltyAccounts = new Map([
 // Append-only event audit log
 const auditEventLog = [];
 
-// Merkle anchors store
-const merkleAnchors = new Map();
-
 /**
  * Computes SHA-256 hash of arbitrary payload
  */
@@ -69,7 +66,6 @@ function logEvent({ ticketId, action, actor = 'system', payload = {}, statusTran
     actor,
     payloadHash,
     statusTransition,
-    anchorId: null,
     createdAt: new Date().toISOString()
   };
   auditEventLog.push(eventRecord);
@@ -83,33 +79,12 @@ function getEventsForTicket(ticketId) {
   return auditEventLog.filter(e => e.ticketId === ticketId);
 }
 
-/**
- * Retrieves unanchored events from the log
- */
-function getUnanchoredEvents() {
-  return auditEventLog.filter(e => e.anchorId === null);
-}
-
-/**
- * Marks events as anchored with an anchor ID
- */
-function markEventsAnchored(eventIds, anchorId) {
-  for (const eventRecord of auditEventLog) {
-    if (eventIds.includes(eventRecord.id)) {
-      eventRecord.anchorId = anchorId;
-    }
-  }
-}
-
 module.exports = {
   events,
   tickets,
   loyaltyAccounts,
   auditEventLog,
-  merkleAnchors,
   logEvent,
   getEventsForTicket,
-  getUnanchoredEvents,
-  markEventsAnchored,
   hashPayload
 };
