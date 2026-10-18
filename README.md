@@ -1,31 +1,54 @@
-# Headless Non-Custodial E-Ticketing & Loyalty Platform
+# Headless Ticketing & Loyalty Platform
 
-A headless, non-custodial digital ticketing and loyalty platform built with Node.js and Express. End-users interact strictly via native device wallets (**Apple Wallet `.pkpass`** and **Google Wallet JWT**) and **WebAuthn Passkeys**. The platform provisions Turnkey-backed sub-organizations for zero-custody wallet isolation and processes gasless transactions via ERC-4337 Account Abstraction without holding raw private keys.
+A headless ticketing and loyalty platform built with Node.js and Express. It issues Apple Wallet `.pkpass` files and Google Wallet passes for event tickets and loyalty cards, validates entry scans using TOTP-based gate checks, and can submit on-chain actions through an ERC-4337 paymaster/bundler layer when transaction execution is needed.
+
+The platform keeps application state in its own backend services and does not store raw user private keys or seed phrases. Where on-chain execution is required, it relies on scoped operator delegation, auditable action logs, and constrained transaction policies rather than exposing full wallet control to end users.
+
+---
+
+## Architecture Overview
+
+### 1. Application Model
+- **API layer:** Express service exposes event, pass, verification, and wallet endpoints.
+- **Pass issuance:** Produces Apple Wallet `.pkpass` archives and Google Wallet JWT links for event tickets and loyalty cards.
+- **Gate validation:** Uses TOTP-based validation and a replay cache to prevent duplicate scans.
+- **Wallet / transaction layer:** Integrates with Turnkey and optional ERC-4337 infrastructure for account creation and gasless intent submission.
+
+### 2. Operator-Managed Transaction Model
+- The backend does not keep raw user signing keys in memory, logs, or the database.
+- When a transaction is required, the platform operates under an operator or delegated authority model with explicit scope, limits, and audit logs.
+- This is designed for ticketing and loyalty use cases where the primary value is access control and promotions rather than unrestricted monetary custody.
+
+### 3. Ticketing & Loyalty Scope
+- **Ticketing:** Event access, scan validation, and status transitions.
+- **Loyalty:** Pass issuance, personalized offers, and points or redemption flows where value remains bounded and auditable.
+- **Not a general-purpose custody platform:** The system is intentionally scoped to access and promotion flows, not unrestricted wallet custody or uncontrolled token transfer.
 
 ---
 
 ## Key Features & Architecture
 
-### 1. Zero-Custody Architecture (Turnkey Integration)
-- **No Private Key Access:** The backend service **never** holds, generates, or stores raw private keys or seed phrases in memory, logs, or databases.
-- **Turnkey Sub-Organizations:** User wallets are created in isolated Sub-Organizations provisioned via Turnkey (`@turnkey/http`).
-- **Data Persistence:** Stores only `subOrganizationId`, `walletId`, and public `walletAddress`.
-- **Passkey Stamping:** Relays client-signed WebAuthn signatures directly to Turnkey without modifying request payloads.
+### 1. Turnkey Integration
+- **No raw private key storage:** The backend never stores raw private keys or seed phrases in memory, logs, or databases.
+- **Provisioning flow:** User wallets are created in isolated sub-organizations or delegated contexts using Turnkey (`@turnkey/http`).
+- **Persisted metadata:** Stores only operational identifiers such as `subOrganizationId`, `walletId`, and public wallet addresses when required by the integration.
+- **Passkey stamping:** Relays client-signed WebAuthn signatures directly to Turnkey without modifying request payloads.
 
 ### 2. Device-Native Wallet Passes
-- **Apple Wallet (.pkpass):** Dynamic `.pkpass` archives compliant with PassKit specifications (`eventTicket` and `storeCard`). Generates ZIP buffers containing `pass.json`, manifest SHA-1 hashes, and assets.
-- **Google Wallet (JWT):** Signed JWTs generating "Save to Google Wallet" links for `EventTicket` and `Loyalty` classes and objects.
-- **Anti-Screenshot TOTP Barcodes:** Pass barcodes contain dynamic time-based rotating payload strings (`ticketId:totp_token`).
+- **Apple Wallet (`.pkpass`):** Dynamic pass archives compliant with PassKit for event tickets and loyalty cards.
+- **Google Wallet (JWT):** Signed JWT links for pass issuance and Google Wallet object generation.
+- **Dynamic barcodes:** Pass barcodes may contain rotating TOTP tokens or other short-lived validation data.
 
 ### 3. Gate Verification & Anti-Replay Engine
 - **Endpoint:** `POST /api/passes/verify`
-- **Dynamic TOTP Validation:** Validates TOTP against ticket secrets with a sliding time window ($\pm 30$ seconds).
-- **In-Memory Replay Cache:** Uses single-use token consumption caching with TTL to reject duplicate scans (`409 Conflict`).
-- **Atomic State Transition:** Automatically transitions ticket status to `CHECKED_IN`.
+- **Dynamic TOTP validation:** Validates ticket or pass codes against a short-lived rotating secret.
+- **Replay protection:** Uses a single-use cache and TTL to reject duplicate scans.
+- **Atomic status transitions:** Moves tickets from active to checked-in or otherwise consumed states.
 
 ### 4. Gasless Intent Infrastructure (ERC-4337)
-- **Account Abstraction:** Formats ticket transfers and loyalty points redemptions into ERC-4337 `UserOperation` payloads.
-- **Paymaster Routing:** Dispatches client-signed intents through an ERC-4337 Paymaster and Bundler so end-users require zero native gas tokens (ETH/MATIC).
+- **Account abstraction support:** Formats approved actions into ERC-4337 `UserOperation` payloads when a transaction-backed workflow is required.
+- **Paymaster routing:** Can dispatch client-signed intents through an ERC-4337 paymaster and bundler layer.
+- **Scope-bound execution:** Paymaster and relayer policies should enforce allowlists, limits, and explicit approval rules.
 
 ---
 
@@ -37,13 +60,15 @@ src/
 ├── server.js                # Server entrypoint
 ├── app.test.js              # Server health test
 └── modules/
-    ├── events/              # Event, ticket & loyalty data models & service
-    ├── passes/              # Apple .pkpass and Google Wallet JWT pass engine
-    ├── turnkey/             # Turnkey sub-org provisioning & stamp proxy
-    ├── validation/          # TOTP gate verification & anti-replay cache
-    └── aa/                  # ERC-4337 UserOp intent builders & Paymaster routing
+    ├── events/              # Event, ticket, and loyalty data models + services
+    ├── passes/              # Apple .pkpass and Google Wallet pass generation
+    ├── turnkey/             # Turnkey sub-org provisioning and request proxying
+    ├── validation/          # TOTP gate verification and anti-replay logic
+    └── aa/                  # ERC-4337 intent builders and paymaster routing
+
 docs/
-└── E2E_GUIDE.md             # Detailed sandbox manual & automated E2E testing guide
+└── E2E_GUIDE.md             # Detailed sandbox manual and automated E2E testing guide
+
 scripts/
 └── e2e-test.js              # Automated E2E verification test runner
 ```
@@ -115,15 +140,30 @@ For step-by-step cURL commands and sandbox verification flows, consult [docs/E2E
 - `GET /api/loyalty/:id/google-pass-url` — Get Google Wallet Loyalty link
 
 ### 3. Turnkey Sub-Org Provisioning
-- `POST /api/users/provision-wallet` — Provision user sub-organization & wallet
-- `GET /api/users/:userId/wallet` — Retrieve user's public wallet address & subOrg ID
+- `POST /api/users/provision-wallet` — Provision a user sub-organization or delegated wallet context
+- `GET /api/users/:userId/wallet` — Retrieve wallet metadata if configured for the integration
 - `POST /api/turnkey/proxy` — Relay client-signed stamps to Turnkey API
 
 ### 4. Gate Verification
-- `POST /api/passes/verify` — Validate TOTP scanned code & update ticket status to `CHECKED_IN`
+- `POST /api/passes/verify` — Validate a scanned code and update ticket status
   - Body payload: `{ "ticketId": "tkt_001", "totpToken": "123456" }` or `{ "payload": "tkt_001:123456" }`
 
 ### 5. ERC-4337 Gasless Intents
-- `POST /api/aa/transfer-ticket` — Build ticket transfer UserOp intent
-- `POST /api/aa/redeem-points` — Build points redemption UserOp intent
-- `POST /api/aa/dispatch` — Relay signed UserOp to Paymaster / Bundler
+- `POST /api/aa/transfer-ticket` — Build a ticket transfer intent
+- `POST /api/aa/redeem-points` — Build a points redemption intent
+- `POST /api/aa/dispatch` — Relay a signed UserOperation to a Paymaster / Bundler
+
+---
+
+## Operational Notes
+
+### Scope and Risk Model
+This project is intentionally designed for access-control and promotional flows where the core value is validity, redemption, and loyalty benefits rather than unrestricted asset custody. As a result, the operating model emphasizes:
+- scoped delegation,
+- minimal secret exposure,
+- replay protection,
+- signed/verifiable actions,
+- and explicit operational limits.
+
+### Why This Matters
+This architecture keeps the backend simple and avoids the operational complexity of unrestricted wallet custody. It is a better fit for ticketing and loyalty use cases, where the primary concern is reliable pass issuance and redemption rather than broad on-chain financial autonomy.
