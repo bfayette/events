@@ -107,7 +107,7 @@ class ValidationService {
   }
 
   /**
-   * Verifies an offline signed receipt (JWS or EIP-712 format)
+   * Verifies an offline signed receipt (JWS format)
    */
   verifyOfflineReceipt(receiptInput) {
     this.cleanExpiredTokens();
@@ -116,8 +116,6 @@ class ValidationService {
     if (typeof receiptInput === 'string' || (receiptInput && receiptInput.format === 'JWS')) {
       const token = typeof receiptInput === 'string' ? receiptInput : receiptInput.token;
       verifyResult = signerService.verifyJWSReceipt(token);
-    } else if (receiptInput && (receiptInput.format === 'EIP712' || receiptInput.message)) {
-      verifyResult = signerService.verifyEIP712Receipt(receiptInput);
     } else {
       return { status: 400, valid: false, reason: 'Unsupported or missing receipt payload format' };
     }

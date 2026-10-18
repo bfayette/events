@@ -1,10 +1,7 @@
 const express = require('express');
 const eventsRouter = require('./modules/events/events.router');
 const passesRouter = require('./modules/passes/passes.router');
-const turnkeyRouter = require('./modules/turnkey/turnkey.router');
 const validationRouter = require('./modules/validation/validation.router');
-const aaRouter = require('./modules/aa/aa.router');
-const anchoringRouter = require('./modules/anchoring/anchoring.router');
 
 const app = express();
 
@@ -18,10 +15,12 @@ app.get('/health', (req, res) => {
 // Domain Routes
 app.use('/api/events', eventsRouter);
 app.use('/api/passes', validationRouter);
-app.use('/api/anchoring', anchoringRouter);
 app.use('/api', passesRouter); // Handles /api/tickets/... and /api/loyalty/...
-app.use('/api/users', turnkeyRouter);
-app.use('/api/turnkey', turnkeyRouter);
-app.use('/api/aa', aaRouter);
+
+// Express global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ message: 'Internal server error' });
+});
 
 module.exports = app;

@@ -81,8 +81,8 @@ class PassDataMapper {
           },
           {
             key: 'owner',
-            label: 'Owner Wallet',
-            value: ticket.ownerAddress
+            label: 'Owner Email',
+            value: ticket.owner_email
           },
           {
             key: 'status',
@@ -206,7 +206,7 @@ class PassDataMapper {
                 }
               }
             },
-            ticketHolderName: ticket.ownerAddress
+            ticketHolderName: ticket.owner_email
           }
         ]
       }
@@ -245,7 +245,7 @@ class PassDataMapper {
             id: objectId,
             classId: classId,
             state: 'ACTIVE',
-            accountName: loyalty.ownerAddress,
+            accountName: loyalty.owner_email,
             accountId: loyalty.accountNumber,
             barcode: {
               type: 'QR_CODE',

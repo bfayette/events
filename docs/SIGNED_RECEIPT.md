@@ -18,9 +18,7 @@ Key requirements:
 
 ## 2. Receipt Payload Schemas
 
-Signed receipts support two payload formats depending on verifier capabilities:
-1. **JSON Web Signature (JWS / Compact JWT)** - Standard for HTTP endpoints and standard QR scanners.
-2. **EIP-712 Typed Data Signature** - Standard for Ethereum/EVM-compatible hardware verifiers and Web3 native tooling.
+Signed receipts support JSON Web Signature (JWS / Compact JWT) format for HTTP endpoints and standard QR scanners.
 
 ### Minimal Required Claims
 
@@ -39,7 +37,7 @@ Every signed receipt payload MUST contain the following 6 core claims:
 
 ## 3. Format Details
 
-### A. JWS Compact Payload Format
+### JWS Compact Payload Format
 
 A JWS receipt uses the compact dot-separated format (`header.payload.signature`):
 
@@ -64,42 +62,14 @@ A JWS receipt uses the compact dot-separated format (`header.payload.signature`)
 }
 ```
 
-### B. EIP-712 Typed Data Payload Format
-
-For EIP-712 verifiers, signatures follow the typed data structure:
-
-**Domain:**
-```json
-{
-  "name": "TicketingPlatform",
-  "version": "1.0",
-  "chainId": 1,
-  "verifyingContract": "0x0000000000000000000000000000000000000000"
-}
-```
-
-**Types:**
-```json
-{
-  "SignedReceipt": [
-    { "name": "ticket_id", "type": "string" },
-    { "name": "issued_at", "type": "uint256" },
-    { "name": "expires_at", "type": "uint256" },
-    { "name": "nonce", "type": "string" },
-    { "name": "issuer", "type": "string" },
-    { "name": "schema_version", "type": "string" }
-  ]
-}
-```
-
 ---
 
 ## 4. Verifier Validation Flow
 
-When a verifier scans a receipt payload (either JWS string or JSON object containing EIP-712 signature):
+When a verifier scans a receipt payload:
 
 1. **Schema & Claim Extraction:** Parse header and extract claims (`ticket_id`, `issued_at`, `expires_at`, `nonce`, `issuer`, `schema_version`). Confirm all required claims are present.
-2. **Key Check:** Match `kid` or signing address against active (non-revoked) operator keys. If key is revoked, REJECT immediately.
+2. **Key Check:** Match `kid` against active (non-revoked) operator keys. If key is revoked, REJECT immediately.
 3. **Expiration Check:** Verify `currentTime <= expires_at` and `currentTime >= issued_at - maxClockSkew` (max skew 15s). If expired or from the future, REJECT.
 4. **Nonce Replay Check:** Query verifier's local single-use nonce cache. If `nonce` was previously scanned, REJECT (replay attempt).
 5. **Signature Verification:** Recompute digest using public operator key and verify cryptographic signature.

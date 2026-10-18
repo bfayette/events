@@ -1,7 +1,7 @@
 {
   "name": "headless-ticketing-platform",
   "version": "2.0.0",
-  "description": "Headless non-custodial e-ticketing & loyalty platform with Turnkey, Apple PassKit, Google Wallet JWT, and ERC-4337",
+  "description": "Headless ticketing API",
   "main": "src/server.js",
   "scripts": {
     "dev": "cross-env NODE_ENV=development node src/server.js",
@@ -10,18 +10,14 @@
     "test:e2e": "node scripts/e2e-test.js"
   },
   "keywords": [
-    "turnkey",
     "passkit",
     "google-wallet",
-    "erc4337",
-    "account-abstraction",
     "totp",
-    "passkey"
+    "ticketing"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@turnkey/http": "^2.16.1",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "jsonwebtoken": "^9.0.2",

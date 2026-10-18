@@ -21,7 +21,7 @@ const tickets = new Map([
     {
       id: 'tkt_001',
       eventId: 'evt_101',
-      ownerAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      owner_email: 'user@example.com',
       secret: 'JBSWY3DPEHPK3PXP', // Base32 secret for TOTP
       seat: 'A-12',
       section: 'VIP',
@@ -35,7 +35,7 @@ const loyaltyAccounts = new Map([
     'loy_001',
     {
       id: 'loy_001',
-      ownerAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      owner_email: 'user@example.com',
       tier: 'Gold VIP',
       points: 1250,
       accountNumber: 'ACC-88991122'
