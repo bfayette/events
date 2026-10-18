@@ -11,7 +11,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     eventsService.tickets.set('tkt_001', {
       id: 'tkt_001',
       eventId: 'evt_101',
-      ownerAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      owner_email: 'buyer@example.com',
       secret: 'JBSWY3DPEHPK3PXP',
       seat: 'A-12',
       section: 'VIP',
@@ -41,7 +41,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     eventsService.tickets.set('tkt_combined', {
       id: 'tkt_combined',
       eventId: 'evt_101',
-      ownerAddress: '0x456',
+      owner_email: 'buyer2@example.com',
       secret: 'JBSWY3DPEHPK3PXP',
       status: 'ISSUED'
     });
@@ -62,7 +62,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
     eventsService.tickets.set('tkt_replay', {
       id: 'tkt_replay',
       eventId: 'evt_101',
-      ownerAddress: '0x123',
+      owner_email: 'buyer3@example.com',
       secret: 'JBSWY3DPEHPK3PXP',
       status: 'ISSUED'
     });
@@ -157,7 +157,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
       eventsService.tickets.set('tkt_offline_1', {
         id: 'tkt_offline_1',
         eventId: 'evt_101',
-        ownerAddress: '0xabc',
+        owner_email: 'buyer_offline@example.com',
         secret: 'JBSWY3DPEHPK3PXP',
         status: 'ISSUED'
       });
@@ -191,7 +191,7 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
       eventsService.tickets.set('tkt_conflict_1', {
         id: 'tkt_conflict_1',
         eventId: 'evt_101',
-        ownerAddress: '0xdef',
+        owner_email: 'buyer_conflict@example.com',
         secret: 'JBSWY3DPEHPK3PXP',
         status: 'CHECKED_IN' // Already checked in online earlier
       });
