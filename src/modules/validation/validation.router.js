@@ -55,7 +55,7 @@ router.post('/verify', requireRole('verifier'), (req, res) => {
       return res.status(400).json({ message: 'ticketId is required' });
     }
 
-    const ticketRecord = eventsService.tickets.get(ticketId);
+    const ticketRecord = eventsService.getTicketByIdOrPublicRef(ticketId);
     if (ticketRecord && !checkEventScope(req.actor, ticketRecord.eventId)) {
       return res.status(403).json({ message: `Forbidden: Access denied for event ${ticketRecord.eventId}` });
     }
@@ -64,7 +64,7 @@ router.post('/verify', requireRole('verifier'), (req, res) => {
     }
 
     const { status, result } = validationService.verifyAndCheckInTicket(
-      { ticketId, totpToken, actor: actorLabel },
+      { ticketId: ticketRecord ? ticketRecord.public_ref : ticketId, totpToken, actor: actorLabel },
       ticketRecord
     );
 
@@ -88,7 +88,7 @@ router.post('/issue-receipt', requireRole('verifier', 'agent', 'sales'), (req, r
       return res.status(400).json({ message: "Unsupported receipt format. Only 'JWS' is supported" });
     }
 
-    const ticketRecord = eventsService.tickets.get(ticketId);
+    const ticketRecord = eventsService.getTicketByIdOrPublicRef(ticketId);
     if (!ticketRecord) {
       return res.status(404).json({ message: 'Ticket not found' });
     }
@@ -97,7 +97,7 @@ router.post('/issue-receipt', requireRole('verifier', 'agent', 'sales'), (req, r
       return res.status(403).json({ message: `Forbidden: Access denied for event ${ticketRecord.eventId}` });
     }
 
-    const receipt = signerService.generateJWSReceipt({ ticketId, ttlSeconds, issuer, schemaVersion });
+    const receipt = signerService.generateJWSReceipt({ ticketId: ticketRecord.public_ref, ttlSeconds, issuer, schemaVersion });
 
     return res.status(201).json({
       message: 'Signed receipt generated successfully',
@@ -150,14 +150,15 @@ router.post('/reconcile', requireRole('verifier'), (req, res) => {
 // GET /api/passes/tickets/:id/events (Retrieve ticket audit log history)
 router.get('/tickets/:id/events', requireRole('verifier', 'agent', 'sales'), (req, res) => {
   try {
-    const ticketId = req.params.id;
-    const ticketRecord = eventsService.tickets.get(ticketId);
+    const identifier = req.params.id;
+    const ticketRecord = eventsService.getTicketByIdOrPublicRef(identifier);
     if (ticketRecord && !checkEventScope(req.actor, ticketRecord.eventId)) {
       return res.status(403).json({ message: `Forbidden: Access denied for event ${ticketRecord.eventId}` });
     }
-    const ticketEvents = eventsService.getEventsForTicket(ticketId);
+    const internalId = ticketRecord ? ticketRecord.id : identifier;
+    const ticketEvents = eventsService.getEventsForTicket(internalId);
     return res.status(200).json({
-      ticketId,
+      ticketId: ticketRecord ? ticketRecord.public_ref : identifier,
       events: ticketEvents
     });
   } catch (error) {

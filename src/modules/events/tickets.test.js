@@ -5,7 +5,6 @@ const { generateShortCode, normalizeShortCode, hashShortCode } = require('../pas
 
 describe('Phase C: Short Codes & Ticket Issuance Endpoint', () => {
   beforeEach(() => {
-    // Enable STATIC code mode on evt_102 for testing
     eventsService.events.set('evt_102', {
       id: 'evt_102',
       name: 'Static Ticket Event',
@@ -44,7 +43,7 @@ describe('Phase C: Short Codes & Ticket Issuance Endpoint', () => {
       const res = await request(app)
         .post('/api/tickets')
         .send({
-          eventId: 'evt_101', // allowed_code_modes default ['TOTP']
+          eventId: 'evt_101',
           codeMode: 'STATIC',
           ownerEmail: 'alice@example.com'
         });
@@ -53,7 +52,7 @@ describe('Phase C: Short Codes & Ticket Issuance Endpoint', () => {
       expect(res.body.message).toMatch(/Code mode 'STATIC' is not allowed/);
     });
 
-    it('issues STATIC ticket successfully returning qrPayload and shortCode once', async () => {
+    it('issues STATIC ticket successfully returning qrPayload, shortCode, public_ref and holderToken', async () => {
       const res = await request(app)
         .post('/api/tickets')
         .send({
@@ -65,25 +64,28 @@ describe('Phase C: Short Codes & Ticket Issuance Endpoint', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.ticket).toBeDefined();
+      expect(res.body.ticket.public_ref).toBeDefined();
+      expect(res.body.ticket.id).toBeUndefined(); // Internal id omitted
       expect(res.body.ticket.code_mode).toBe('STATIC');
       expect(res.body.ticket.secret).toBeNull();
       expect(res.body.qrPayload).toBeDefined();
       expect(res.body.shortCode).toBeDefined();
+      expect(res.body.holderToken).toBeDefined();
 
-      const createdId = res.body.ticket.id;
-      const storedTicket = eventsService.tickets.get(createdId);
+      const createdRef = res.body.ticket.public_ref;
+      const storedTicket = eventsService.getTicketByPublicRef(createdRef);
+      expect(storedTicket).toBeDefined();
       expect(storedTicket.secret).toBeNull();
       expect(storedTicket.short_code_hash).toBeDefined();
-      expect(storedTicket.short_code_hash).not.toBe(res.body.shortCode); // Plaintext is NOT stored!
+      expect(storedTicket.short_code_hash).not.toBe(res.body.shortCode);
 
-      // Verify audit log does not contain plaintext shortCode
-      const auditEvents = eventsService.getEventsForTicket(createdId);
+      const auditEvents = eventsService.getEventsForTicket(storedTicket.id);
       expect(auditEvents.length).toBeGreaterThan(0);
       const auditPayloadStr = JSON.stringify(auditEvents[0]);
       expect(auditPayloadStr).not.toContain(res.body.shortCode);
     });
 
-    it('issues TOTP ticket successfully returning wallet URLs and secret', async () => {
+    it('issues TOTP ticket successfully returning wallet URLs with public_ref and holderToken', async () => {
       const res = await request(app)
         .post('/api/tickets')
         .send({
@@ -93,10 +95,13 @@ describe('Phase C: Short Codes & Ticket Issuance Endpoint', () => {
         });
 
       expect(res.status).toBe(201);
+      expect(res.body.ticket.public_ref).toBeDefined();
+      expect(res.body.ticket.id).toBeUndefined();
       expect(res.body.ticket.code_mode).toBe('TOTP');
       expect(res.body.ticket.secret).toBeDefined();
-      expect(res.body.applePassUrl).toBeDefined();
-      expect(res.body.googlePassUrl).toBeDefined();
+      expect(res.body.holderToken).toBeDefined();
+      expect(res.body.applePassUrl).toContain(`/api/tickets/${res.body.ticket.public_ref}/apple-pass`);
+      expect(res.body.googlePassUrl).toContain(`/api/tickets/${res.body.ticket.public_ref}/google-pass-url`);
     });
 
     it('rejects ticket creation when no contact info is provided and anonymous is false', async () => {

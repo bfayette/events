@@ -4,24 +4,25 @@ class PassDataMapper {
   /**
    * Generates dynamic barcode payload with current TOTP token: ticketId:totp_token
    */
-  static generateBarcodePayload(ticketId, secret) {
+  static generateBarcodePayload(publicRef, secret) {
     if (!secret) {
-      return ticketId;
+      return publicRef;
     }
     const token = authenticator.generate(secret);
-    return `${ticketId}:${token}`;
+    return `${publicRef}:${token}`;
   }
 
   /**
    * Map internal event & ticket model to Apple PassKit JSON structure (type: eventTicket)
    */
   static toAppleEventPass(ticket, event) {
-    const barcodePayload = this.generateBarcodePayload(ticket.id, ticket.secret);
+    const ref = ticket.public_ref || ticket.id;
+    const barcodePayload = this.generateBarcodePayload(ref, ticket.secret);
 
     return {
       formatVersion: 1,
       passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID || 'pass.com.platform.event',
-      serialNumber: ticket.id,
+      serialNumber: ref,
       teamIdentifier: process.env.APPLE_TEAM_ID || 'TEAM12345',
       organizationName: 'Headless E-Ticketing Platform',
       description: event ? event.name : 'Event Ticket',
@@ -75,9 +76,9 @@ class PassDataMapper {
         ],
         backFields: [
           {
-            key: 'ticketId',
-            label: 'Ticket ID',
-            value: ticket.id
+            key: 'ticketRef',
+            label: 'Ticket Reference',
+            value: ref
           },
           {
             key: 'owner',
@@ -151,10 +152,11 @@ class PassDataMapper {
    * Map internal event & ticket model to Google Wallet EventTicket Object
    */
   static toGoogleEventPass(ticket, event) {
-    const barcodePayload = this.generateBarcodePayload(ticket.id, ticket.secret);
+    const ref = ticket.public_ref || ticket.id;
+    const barcodePayload = this.generateBarcodePayload(ref, ticket.secret);
     const issuerId = process.env.GOOGLE_ISSUER_ID || '33880000000221100';
     const classId = `${issuerId}.event_${ticket.eventId}`;
-    const objectId = `${issuerId}.ticket_${ticket.id}`;
+    const objectId = `${issuerId}.ticket_${ref}`;
 
     return {
       iss: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || 'service-account@platform.iam.gserviceaccount.com',
@@ -190,7 +192,7 @@ class PassDataMapper {
             barcode: {
               type: 'QR_CODE',
               value: barcodePayload,
-              alternateText: ticket.id
+              alternateText: ref
             },
             seatInfo: {
               seat: {

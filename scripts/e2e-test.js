@@ -2,6 +2,7 @@ const http = require('http');
 const { authenticator } = require('otplib');
 const app = require('../src/app');
 const eventsService = require('../src/modules/events/events.service');
+const tokenService = require('../src/modules/passes/token.service');
 
 const PORT = 3099;
 let server;
@@ -56,6 +57,7 @@ async function runE2ETests() {
   // Seed fresh ticket for reconciliation test
   eventsService.tickets.set('tkt_e2e_reconcile', {
     id: 'tkt_e2e_reconcile',
+    public_ref: 'ref_e2e_reconcile_01',
     eventId: 'evt_101',
     owner_email: 'user@example.com',
     secret: 'JBSWY3DPEHPK3PXP',
@@ -81,6 +83,14 @@ async function runE2ETests() {
   });
 
   try {
+    const demoTicket = eventsService.tickets.get('tkt_001');
+    const demoRef = demoTicket.public_ref;
+    const holderToken = tokenService.generateHolderToken({
+      publicRef: demoRef,
+      version: 1,
+      holderIdentifier: demoTicket.owner_email
+    });
+
     // 1. Healthcheck
     console.log('\n[1/6] Testing Healthcheck Endpoint...');
     const health = await makeRequest('GET', '/health');
@@ -89,24 +99,28 @@ async function runE2ETests() {
 
     // 2. Apple & Google Pass Issuance
     console.log('\n[2/6] Testing Apple .pkpass & Google Wallet Pass Issuance...');
-    const applePass = await makeRequest('GET', '/api/tickets/tkt_001/apple-pass');
+    const applePass = await makeRequest('GET', `/api/tickets/${demoRef}/apple-pass`, null, {
+      'Authorization': `Bearer ${holderToken}`
+    });
     console.assert(applePass.statusCode === 200, 'Apple pass issuance failed');
     console.assert(applePass.headers['content-type'] === 'application/vnd.apple.pkpass', 'Invalid Apple pass content-type');
     console.log('  ✅ Apple Wallet .pkpass binary generated successfully');
 
-    const googlePass = await makeRequest('GET', '/api/tickets/tkt_001/google-pass-url');
+    const googlePass = await makeRequest('GET', `/api/tickets/${demoRef}/google-pass-url`, null, {
+      'Authorization': `Bearer ${holderToken}`
+    });
     console.assert(googlePass.statusCode === 200, 'Google pass URL generation failed');
     console.assert(googlePass.body.saveUrl.includes('pay.google.com'), 'Invalid Google save URL');
     console.log(`  ✅ Google Wallet Save URL generated: ${googlePass.body.saveUrl.substring(0, 60)}...`);
 
     // 3. Dynamic TOTP Gate Check-In & Anti-Replay
     console.log('\n[3/6] Testing Dynamic TOTP Gate Verification & Anti-Replay Cache...');
-    const secret = eventsService.tickets.get('tkt_001').secret;
+    const secret = demoTicket.secret;
     const totpToken = authenticator.generate(secret);
 
     // Initial Gate Scan -> Success 200
     const scan1 = await makeRequest('POST', '/api/passes/verify', {
-      ticketId: 'tkt_001',
+      ticketId: demoRef,
       totpToken: totpToken
     });
     console.assert(scan1.statusCode === 200, 'Initial gate scan failed');
@@ -115,7 +129,7 @@ async function runE2ETests() {
 
     // Duplicate Scan -> Replay Attack Rejection 409
     const scan2 = await makeRequest('POST', '/api/passes/verify', {
-      ticketId: 'tkt_001',
+      ticketId: demoRef,
       totpToken: totpToken
     });
     console.assert(scan2.statusCode === 409, 'Replay attack check failed (Expected 409 Conflict)');
@@ -132,8 +146,8 @@ async function runE2ETests() {
     console.assert(issueStatic.statusCode === 201, 'Static ticket issuance failed');
     console.assert(issueStatic.body.qrPayload, 'Missing qrPayload');
     console.assert(issueStatic.body.shortCode, 'Missing shortCode');
-    const staticTicketId = issueStatic.body.ticket.id;
-    console.log(`  ✅ Static ticket issued successfully (ID: ${staticTicketId}, ShortCode: ${issueStatic.body.shortCode})`);
+    const staticTicketRef = issueStatic.body.ticket.public_ref;
+    console.log(`  ✅ Static ticket issued successfully (Ref: ${staticTicketRef}, ShortCode: ${issueStatic.body.shortCode})`);
 
     // Verify Short Code Scan
     const scanShortCode = await makeRequest('POST', '/api/passes/verify', {
@@ -164,7 +178,7 @@ async function runE2ETests() {
     console.log(`  ✅ Offline manifest retrieved (${manifestRes.body.count} static tickets)`);
 
     const receiptIssuance = await makeRequest('POST', '/api/passes/issue-receipt', {
-      ticketId: 'tkt_e2e_reconcile',
+      ticketId: 'ref_e2e_reconcile_01',
       format: 'JWS',
       ttlSeconds: 60
     });

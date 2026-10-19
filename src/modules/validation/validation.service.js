@@ -210,7 +210,7 @@ class ValidationService {
       status: 200,
       result: {
         message: method === 'TOTP' ? 'Gate check-in successful' : 'Entry check-in successful',
-        ticketId: tkt.id,
+          ticketId: tkt.public_ref || tkt.id,
         status: ticket.status,
         entriesUsed: ticket.entries_used,
         maxEntries: tkt.max_entries,
@@ -271,7 +271,7 @@ class ValidationService {
       };
     }
 
-    const ticket = eventsService.tickets.get(claims.ticket_id);
+    const ticket = eventsService.getTicketByIdOrPublicRef(claims.ticket_id);
     return this.consumeEntry({
       method: 'STATIC_QR',
       ticket,
@@ -554,7 +554,7 @@ class ValidationService {
 
       const { claims } = verifyRes;
       const ticketId = claims.ticket_id;
-      const ticketRecord = eventsService.tickets.get(ticketId);
+      const ticketRecord = eventsService.getTicketByIdOrPublicRef(ticketId);
 
       if (!ticketRecord) {
         results.push({
@@ -571,7 +571,7 @@ class ValidationService {
       // Version mismatch check (e.g. ticket reissued after offline manifest download)
       if (itemVersion !== null && itemVersion !== tkt.version) {
         eventsService.logEvent({
-          ticketId,
+          ticketId: ticketRecord.id,
           action: 'CHECKIN_CONFLICT',
           actor: verifierId,
           payload: { claims, raw: item, offlineVersion: itemVersion, currentVersion: tkt.version },
@@ -593,7 +593,7 @@ class ValidationService {
       if (tkt.status === 'CHECKED_IN' || tkt.entries_used >= tkt.max_entries) {
         // Log conflict in audit event log
         eventsService.logEvent({
-          ticketId,
+          ticketId: ticketRecord.id,
           action: 'CHECKIN_CONFLICT',
           actor: verifierId,
           payload: { claims, raw: item },
@@ -621,7 +621,7 @@ class ValidationService {
 
       // Log append-only audit event for offline check-in
       eventsService.logEvent({
-        ticketId,
+        ticketId: ticketRecord.id,
         action: 'CHECKIN_OFFLINE',
         actor: verifierId,
         payload: { claims, raw: item },

@@ -164,9 +164,10 @@ function searchCandidates({ eventId, phone, name, secondFactor, verifierLabel })
     result: candidateTickets.length > 0 ? 'ACCEPTED' : 'NOT_FOUND'
   });
 
-  const candidates = candidateTickets.map(tkt => {
+  const candidates = candidateTickets.map((tkt, idx) => {
+    const rawTkt = Array.from(eventsService.tickets.values()).find(t => t.public_ref === tkt.public_ref) || tkt;
     const lookupToken = createLookupToken({
-      ticketId: tkt.id,
+      ticketId: rawTkt.id || rawTkt.public_ref,
       eventId: tkt.eventId,
       verifierLabel
     });

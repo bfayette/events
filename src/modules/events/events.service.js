@@ -15,6 +15,57 @@ if (config.seedDemoData) {
 const auditEventLog = [];
 
 /**
+ * Generates a public_ref using 16 random bytes (128 bits), base64url-encoded without padding.
+ */
+function generatePublicRef() {
+  let attempts = 0;
+  while (attempts < 100) {
+    const ref = crypto.randomBytes(16).toString('base64url');
+    let collision = false;
+    for (const t of tickets.values()) {
+      if (t.public_ref === ref) {
+        collision = true;
+        break;
+      }
+    }
+    if (!collision) return ref;
+    attempts++;
+  }
+  throw new Error('Failed to generate unique public_ref');
+}
+
+/**
+ * Look up ticket strictly by public_ref. Rejects legacy internal 'tkt_' IDs on public routes.
+ */
+function getTicketByPublicRef(publicRef) {
+  if (!publicRef || typeof publicRef !== 'string') return null;
+  if (publicRef.startsWith('tkt_')) return null;
+
+  for (const ticket of tickets.values()) {
+    if (ticket.public_ref === publicRef) {
+      return ticket;
+    }
+  }
+  return null;
+}
+
+/**
+ * Look up ticket by internal ID or public_ref (for internal/staff operations).
+ */
+function getTicketByIdOrPublicRef(identifier) {
+  if (!identifier || typeof identifier !== 'string') return null;
+  if (tickets.has(identifier)) {
+    return tickets.get(identifier);
+  }
+  for (const ticket of tickets.values()) {
+    if (ticket.public_ref === identifier) {
+      return ticket;
+    }
+  }
+  return null;
+}
+
+/**
  * Computes SHA-256 hash of arbitrary payload
  */
 function hashPayload(payload) {
@@ -48,8 +99,11 @@ function normalizePhone(phone) {
  */
 function getTicketWithDefaults(ticket) {
   if (!ticket) return null;
+  if (!ticket.public_ref) {
+    ticket.public_ref = generatePublicRef();
+  }
   return {
-    id: ticket.id,
+    public_ref: ticket.public_ref,
     eventId: ticket.eventId,
     owner_email: ticket.owner_email ?? null,
     secret: ticket.secret ?? null,
@@ -195,6 +249,9 @@ module.exports = {
   auditEventLog,
   logEvent,
   getEventsForTicket,
+  generatePublicRef,
+  getTicketByPublicRef,
+  getTicketByIdOrPublicRef,
   hashPayload,
   normalizePhone,
   getTicketWithDefaults,
