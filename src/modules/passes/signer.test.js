@@ -63,3 +63,61 @@ describe('SignerService Key Rotation & Unknown Kid Handling', () => {
     expect(result.reason).toContain('Unknown operator key ID unknown-kid-xyz');
   });
 });
+
+describe('Static Ticket Codes & Cross-Use Security Checks', () => {
+  beforeEach(() => {
+    signerService.resetRevocations();
+  });
+
+  it('generates and verifies valid static ticket code JWS', () => {
+    const staticCode = signerService.generateStaticCode({
+      ticketId: 'tkt_static_100',
+      version: 2,
+      eventId: 'evt_101'
+    });
+
+    expect(staticCode.token).toBeDefined();
+    expect(staticCode.claims.use).toBe('static_ticket');
+    expect(staticCode.claims.v).toBe(2);
+
+    const verifyRes = signerService.verifyStaticCode(staticCode.token);
+    expect(verifyRes.valid).toBe(true);
+    expect(verifyRes.claims.ticket_id).toBe('tkt_static_100');
+    expect(verifyRes.claims.event_id).toBe('evt_101');
+    expect(verifyRes.claims.v).toBe(2);
+  });
+
+  it('rejects static ticket token when submitted to verifyJWSReceipt', () => {
+    const staticCode = signerService.generateStaticCode({
+      ticketId: 'tkt_static_100',
+      version: 1,
+      eventId: 'evt_101'
+    });
+
+    const verifyRes = signerService.verifyJWSReceipt(staticCode.token);
+    expect(verifyRes.valid).toBe(false);
+    expect(verifyRes.reason).toContain('token use \'static_ticket\' is not a receipt');
+  });
+
+  it('rejects receipt token when submitted to verifyStaticCode', () => {
+    const receipt = signerService.generateJWSReceipt({ ticketId: 'tkt_receipt_100' });
+    // Manually sign receipt with use: 'receipt' claim
+    const receiptWithUse = jwt.sign(
+      {
+        ticket_id: 'tkt_receipt_100',
+        issued_at: Math.floor(Date.now() / 1000),
+        expires_at: Math.floor(Date.now() / 1000) + 60,
+        nonce: 'nonce-789',
+        use: 'receipt',
+        issuer: 'urn:events:operator:main',
+        schema_version: '1.0'
+      },
+      signerService.keys.get(signerService.activeKeyId),
+      { algorithm: 'HS256', header: { kid: signerService.activeKeyId, typ: 'JWT' } }
+    );
+
+    const verifyRes = signerService.verifyStaticCode(receiptWithUse);
+    expect(verifyRes.valid).toBe(false);
+    expect(verifyRes.reason).toContain('expected \'static_ticket\'');
+  });
+});

@@ -130,10 +130,83 @@ function loadConfig(env = process.env) {
   const operatorSecret = validateSecret('OPERATOR_SECRET', env.OPERATOR_SECRET);
   const googleWalletSecret = validateSecret('GOOGLE_WALLET_SECRET', env.GOOGLE_WALLET_SECRET);
 
+  // 6. AUTH_ENFORCED
+  let authEnforced = nodeEnv === 'production';
+  const rawAuthEnforced = env.AUTH_ENFORCED;
+  if (rawAuthEnforced !== undefined && rawAuthEnforced !== '') {
+    if (typeof rawAuthEnforced === 'boolean') {
+      authEnforced = rawAuthEnforced;
+    } else if (rawAuthEnforced === 'true') {
+      authEnforced = true;
+    } else if (rawAuthEnforced === 'false') {
+      authEnforced = false;
+    } else {
+      errors.push(`AUTH_ENFORCED must be 'true' or 'false'`);
+    }
+  }
+
+  // 7. API_KEYS
+  let apiKeys = {};
+  const rawApiKeys = env.API_KEYS;
+  const ALLOWED_ROLES = new Set(['sales', 'verifier', 'agent', 'admin']);
+
+  if (rawApiKeys !== undefined && rawApiKeys !== '' && rawApiKeys !== null) {
+    if (typeof rawApiKeys === 'object' && !Array.isArray(rawApiKeys)) {
+      apiKeys = rawApiKeys;
+    } else if (typeof rawApiKeys === 'string') {
+      try {
+        const parsed = JSON.parse(rawApiKeys);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          apiKeys = parsed;
+        } else {
+          errors.push(`API_KEYS must be a valid JSON map`);
+        }
+      } catch {
+        errors.push(`API_KEYS must be valid JSON`);
+      }
+    } else {
+      errors.push(`API_KEYS must be a valid JSON map`);
+    }
+
+    for (const [key, val] of Object.entries(apiKeys)) {
+      if (typeof key !== 'string' || key.length < 32) {
+        errors.push(`API_KEYS key '${key.substring(0, 10)}...' must be at least 32 characters long`);
+      }
+      if (!val || typeof val !== 'object') {
+        errors.push(`API_KEYS entry for key '${key.substring(0, 10)}...' must be an object`);
+        continue;
+      }
+      if (!ALLOWED_ROLES.has(val.role)) {
+        errors.push(`API_KEYS entry for key '${key.substring(0, 10)}...' must have role 'sales', 'verifier', 'agent', or 'admin'`);
+      }
+      if (val.eventIds !== undefined && !Array.isArray(val.eventIds)) {
+        errors.push(`API_KEYS eventIds for key '${key.substring(0, 10)}...' must be an array of strings`);
+      }
+    }
+  } else if (nodeEnv === 'production' && authEnforced) {
+    errors.push(`API_KEYS is required in production`);
+  }
+
   if (errors.length > 0) {
     const errorMsg = `Invalid configuration:\n${errors.map(e => ` - ${e}`).join('\n')}`;
     throw new Error(errorMsg);
   }
+
+  if (!authEnforced) {
+    console.warn('[auth] Warning: AUTH_ENFORCED is false. Unauthenticated requests will default to admin role with keyLabel "dev".');
+  }
+
+  // 8. HOLDER_DATA_RETENTION_DAYS
+  const rawRetention = env.HOLDER_DATA_RETENTION_DAYS !== undefined && env.HOLDER_DATA_RETENTION_DAYS !== '' ? env.HOLDER_DATA_RETENTION_DAYS : 30;
+  const retentionNum = parseInt(rawRetention, 10);
+  const holderDataRetentionDays = isNaN(retentionNum) || retentionNum < 1 ? 30 : retentionNum;
+
+  // 9. RATE LIMITS
+  const verifierRateLimit = parseInt(env.RATE_LIMIT_VERIFIER_FAILS_PER_MIN || '5', 10);
+  const eventRateLimit = parseInt(env.RATE_LIMIT_EVENT_FAILS_PER_MIN || '30', 10);
+
+  // 10. REISSUE CAP
+  const maxReissues = parseInt(env.MAX_REISSUES_PER_TICKET || '3', 10);
 
   return Object.freeze({
     nodeEnv,
@@ -142,7 +215,13 @@ function loadConfig(env = process.env) {
     operatorSecret,
     operatorPreviousKeys,
     googleWalletSecret,
-    seedDemoData
+    seedDemoData,
+    authEnforced,
+    apiKeys,
+    holderDataRetentionDays,
+    rateLimitVerifierFailsPerMin: isNaN(verifierRateLimit) ? 5 : verifierRateLimit,
+    rateLimitEventFailsPerMin: isNaN(eventRateLimit) ? 30 : eventRateLimit,
+    maxReissuesPerTicket: isNaN(maxReissues) ? 3 : maxReissues
   });
 }
 

@@ -6,7 +6,8 @@ describe('Configuration Loader & Validation (loadConfig)', () => {
     PORT: '3000',
     OPERATOR_KEY_ID: 'op-key-prod-1',
     OPERATOR_SECRET: 'a_very_long_production_operator_secret_1234567890_32chars',
-    GOOGLE_WALLET_SECRET: 'a_very_long_production_google_wallet_secret_1234567890_32chars'
+    GOOGLE_WALLET_SECRET: 'a_very_long_production_google_wallet_secret_1234567890_32chars',
+    API_KEYS: JSON.stringify({ 'a_very_long_production_api_key_32_chars_12345': { role: 'admin', label: 'Prod Key' } })
   };
 
   describe('Production Environment Rules', () => {

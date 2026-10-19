@@ -3,13 +3,48 @@ const router = express.Router();
 const validationService = require('./validation.service');
 const signerService = require('../passes/signer.service');
 const eventsService = require('../events/events.service');
+const { requireRole, checkEventScope } = require('../auth/auth.middleware');
 
-// POST /api/passes/verify (Online TOTP check-in or combined payload)
-router.post('/verify', (req, res) => {
+// POST /api/passes/verify (Online gate check-in for TOTP, STATIC_QR, SHORT_CODE, and LOOKUP)
+router.post('/verify', requireRole('verifier'), (req, res) => {
   try {
-    let { ticketId, totpToken, payload, actor } = req.body;
+    let { ticketId, totpToken, payload, method, code, eventId } = req.body;
+    const actorLabel = req.actor ? req.actor.keyLabel : 'system';
 
-    // Handle scanned combined payload if present e.g. "tkt_001:123456"
+    const scanMethod = method || 'TOTP';
+
+    if (scanMethod === 'STATIC_QR') {
+      const outcome = validationService.verifyStaticQrScan({
+        payload,
+        eventId,
+        verifierLabel: actorLabel,
+        actor: req.actor
+      });
+      return res.status(outcome.status).json(outcome.result);
+    }
+
+    if (scanMethod === 'LOOKUP') {
+      const outcome = validationService.verifyLookupScan({
+        lookupToken: req.body.lookupToken,
+        idChecked: Boolean(req.body.idChecked),
+        verifierLabel: actorLabel
+      });
+      return res.status(outcome.status).json(outcome.result);
+    }
+
+    if (scanMethod === 'SHORT_CODE') {
+      if (eventId && !checkEventScope(req.actor, eventId)) {
+        return res.status(403).json({ message: `Forbidden: Access denied for event ${eventId}` });
+      }
+      const outcome = validationService.verifyShortCodeScan({
+        code,
+        eventId,
+        verifierLabel: actorLabel
+      });
+      return res.status(outcome.status).json(outcome.result);
+    }
+
+    // Default: TOTP scan
     if (payload && typeof payload === 'string' && payload.includes(':')) {
       const parts = payload.split(':');
       ticketId = parts[0];
@@ -21,8 +56,15 @@ router.post('/verify', (req, res) => {
     }
 
     const ticketRecord = eventsService.tickets.get(ticketId);
+    if (ticketRecord && !checkEventScope(req.actor, ticketRecord.eventId)) {
+      return res.status(403).json({ message: `Forbidden: Access denied for event ${ticketRecord.eventId}` });
+    }
+    if (eventId && !checkEventScope(req.actor, eventId)) {
+      return res.status(403).json({ message: `Forbidden: Access denied for event ${eventId}` });
+    }
+
     const { status, result } = validationService.verifyAndCheckInTicket(
-      { ticketId, totpToken, actor },
+      { ticketId, totpToken, actor: actorLabel },
       ticketRecord
     );
 
@@ -34,7 +76,7 @@ router.post('/verify', (req, res) => {
 });
 
 // POST /api/passes/issue-receipt (Issue signed JWS receipt)
-router.post('/issue-receipt', (req, res) => {
+router.post('/issue-receipt', requireRole('verifier', 'agent', 'sales'), (req, res) => {
   try {
     const { ticketId, format = 'JWS', ttlSeconds = 60, issuer, schemaVersion } = req.body;
 
@@ -51,6 +93,10 @@ router.post('/issue-receipt', (req, res) => {
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
+    if (!checkEventScope(req.actor, ticketRecord.eventId)) {
+      return res.status(403).json({ message: `Forbidden: Access denied for event ${ticketRecord.eventId}` });
+    }
+
     const receipt = signerService.generateJWSReceipt({ ticketId, ttlSeconds, issuer, schemaVersion });
 
     return res.status(201).json({
@@ -64,7 +110,7 @@ router.post('/issue-receipt', (req, res) => {
 });
 
 // POST /api/passes/verify-receipt (Verify single signed receipt)
-router.post('/verify-receipt', (req, res) => {
+router.post('/verify-receipt', requireRole('verifier'), (req, res) => {
   try {
     const { receipt } = req.body;
     if (!receipt) {
@@ -80,16 +126,17 @@ router.post('/verify-receipt', (req, res) => {
 });
 
 // POST /api/passes/reconcile (Batch offline scan reconciliation)
-router.post('/reconcile', (req, res) => {
+router.post('/reconcile', requireRole('verifier'), (req, res) => {
   try {
-    const { items, receipts, verifierId = 'verifier_terminal_01' } = req.body;
+    const { items, receipts } = req.body;
+    const verifierLabel = req.actor ? req.actor.keyLabel : 'verifier_terminal_01';
     const batch = items || receipts || [];
 
     if (!Array.isArray(batch)) {
       return res.status(400).json({ message: 'items or receipts array is required' });
     }
 
-    const outcome = validationService.reconcileOfflineReceipts(batch, verifierId);
+    const outcome = validationService.reconcileOfflineReceipts(batch, verifierLabel);
     return res.status(200).json({
       message: 'Reconciliation complete',
       ...outcome
@@ -101,9 +148,13 @@ router.post('/reconcile', (req, res) => {
 });
 
 // GET /api/passes/tickets/:id/events (Retrieve ticket audit log history)
-router.get('/tickets/:id/events', (req, res) => {
+router.get('/tickets/:id/events', requireRole('verifier', 'agent', 'sales'), (req, res) => {
   try {
     const ticketId = req.params.id;
+    const ticketRecord = eventsService.tickets.get(ticketId);
+    if (ticketRecord && !checkEventScope(req.actor, ticketRecord.eventId)) {
+      return res.status(403).json({ message: `Forbidden: Access denied for event ${ticketRecord.eventId}` });
+    }
     const ticketEvents = eventsService.getEventsForTicket(ticketId);
     return res.status(200).json({
       ticketId,

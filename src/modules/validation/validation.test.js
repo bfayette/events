@@ -249,4 +249,152 @@ describe('Anti-Replay Gate Verification Engine & Offline Signed Receipts', () =>
       expect(verifyRes.body.reason).toContain('revoked');
     });
   });
+
+  describe('Phase D: Gate Verification Methods, Multi-Entry, & Rate Limiting', () => {
+    it('photocopy test: scanning same static QR code twice gives ACCEPTED then DENIED_ALREADY_USED with previous entry details', async () => {
+      // Create static ticket
+      const staticTokenObj = signerService.generateStaticCode({
+        ticketId: 'tkt_static_qr_1',
+        version: 1,
+        eventId: 'evt_101'
+      });
+
+      eventsService.tickets.set('tkt_static_qr_1', {
+        id: 'tkt_static_qr_1',
+        eventId: 'evt_101',
+        status: 'ISSUED',
+        code_mode: 'STATIC',
+        version: 1,
+        max_entries: 1,
+        entries_used: 0,
+        owner_email: 'paper@example.com'
+      });
+
+      // First scan -> ACCEPTED 200
+      const scan1 = await request(app)
+        .post('/api/passes/verify')
+        .send({
+          method: 'STATIC_QR',
+          payload: staticTokenObj.qrPayload,
+          eventId: 'evt_101'
+        });
+
+      expect(scan1.statusCode).toBe(200);
+      expect(scan1.body.status).toBe('CHECKED_IN');
+      expect(scan1.body.entriesUsed).toBe(1);
+
+      // Second scan (photocopy) -> DENIED_ALREADY_USED 400 with previous entry details
+      const scan2 = await request(app)
+        .post('/api/passes/verify')
+        .send({
+          method: 'STATIC_QR',
+          payload: staticTokenObj.qrPayload,
+          eventId: 'evt_101'
+        });
+
+      expect(scan2.statusCode).toBe(400);
+      expect(scan2.body.code).toBe('DENIED_ALREADY_USED');
+      expect(scan2.body.previousEntry).toBeDefined();
+      expect(scan2.body.previousEntry.timestamp).toBeDefined();
+      expect(scan2.body.previousEntry.method).toBe('STATIC_QR');
+    });
+
+    it('group pass: max_entries=4 accepts 4 entries and denies the 5th scan', async () => {
+      const validToken = authenticator.generate('JBSWY3DPEHPK3PXP');
+
+      eventsService.tickets.set('tkt_group_4', {
+        id: 'tkt_group_4',
+        eventId: 'evt_101',
+        secret: 'JBSWY3DPEHPK3PXP',
+        status: 'ISSUED',
+        code_mode: 'TOTP',
+        version: 1,
+        max_entries: 4,
+        entries_used: 0,
+        owner_email: 'family@example.com'
+      });
+
+      // 4 scans -> all ACCEPTED
+      for (let i = 1; i <= 4; i++) {
+        const res = await request(app)
+          .post('/api/passes/verify')
+          .send({ ticketId: 'tkt_group_4', totpToken: validToken });
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.entriesUsed).toBe(i);
+        expect(res.body.maxEntries).toBe(4);
+        if (i < 4) {
+          expect(res.body.status).toBe('ISSUED');
+        } else {
+          expect(res.body.status).toBe('CHECKED_IN');
+        }
+      }
+
+      // 5th scan -> DENIED_ALREADY_USED
+      const res5 = await request(app)
+        .post('/api/passes/verify')
+        .send({ ticketId: 'tkt_group_4', totpToken: validToken });
+
+      expect(res5.statusCode).toBe(400);
+      expect(res5.body.code).toBe('DENIED_ALREADY_USED');
+    });
+
+    it('superseded QR test: reissued static ticket with old version gives DENIED_SUPERSEDED', async () => {
+      const oldStaticToken = signerService.generateStaticCode({
+        ticketId: 'tkt_reissued_1',
+        version: 1,
+        eventId: 'evt_101'
+      });
+
+      eventsService.tickets.set('tkt_reissued_1', {
+        id: 'tkt_reissued_1',
+        eventId: 'evt_101',
+        status: 'ISSUED',
+        code_mode: 'STATIC',
+        version: 2, // Reissued -> current version is 2
+        max_entries: 1,
+        entries_used: 0,
+        owner_email: 'reissued@example.com'
+      });
+
+      const res = await request(app)
+        .post('/api/passes/verify')
+        .send({
+          method: 'STATIC_QR',
+          payload: oldStaticToken.qrPayload,
+          eventId: 'evt_101'
+        });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.code).toBe('DENIED_SUPERSEDED');
+      expect(res.body.message).toContain('reissued and code is superseded');
+    });
+
+    it('short code rate limiting: triggers 429 RATE_LIMITED after 5 failed short code attempts', async () => {
+      // 5 invalid short code attempts
+      for (let i = 0; i < 5; i++) {
+        const res = await request(app)
+          .post('/api/passes/verify')
+          .send({
+            method: 'SHORT_CODE',
+            code: 'INVALID0',
+            eventId: 'evt_101'
+          });
+        expect(res.statusCode).toBe(400);
+        expect(res.body.code).toBe('DENIED_INVALID');
+      }
+
+      // 6th attempt -> 429 RATE_LIMITED
+      const resRateLimited = await request(app)
+        .post('/api/passes/verify')
+        .send({
+          method: 'SHORT_CODE',
+          code: 'INVALID0',
+          eventId: 'evt_101'
+        });
+
+      expect(resRateLimited.statusCode).toBe(429);
+      expect(resRateLimited.body.code).toBe('RATE_LIMITED');
+    });
+  });
 });

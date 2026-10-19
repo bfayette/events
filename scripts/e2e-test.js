@@ -62,6 +62,16 @@ async function runE2ETests() {
     status: 'ISSUED'
   });
 
+  // Enable STATIC code mode on evt_101 for E2E tests
+  eventsService.events.set('evt_101', {
+    id: 'evt_101',
+    name: 'Crypto Tech Summit 2025',
+    venue: 'Main Arena, San Francisco',
+    date: '2025-09-15T18:00:00Z',
+    capacity: 500,
+    allowed_code_modes: ['TOTP', 'STATIC']
+  });
+
   // Start server locally on PORT 3099
   await new Promise((resolve) => {
     server = app.listen(PORT, () => {
@@ -72,13 +82,13 @@ async function runE2ETests() {
 
   try {
     // 1. Healthcheck
-    console.log('\n[1/4] Testing Healthcheck Endpoint...');
+    console.log('\n[1/6] Testing Healthcheck Endpoint...');
     const health = await makeRequest('GET', '/health');
     console.assert(health.statusCode === 200, 'Health check failed');
     console.log('  ✅ Server health ok');
 
     // 2. Apple & Google Pass Issuance
-    console.log('\n[2/4] Testing Apple .pkpass & Google Wallet Pass Issuance...');
+    console.log('\n[2/6] Testing Apple .pkpass & Google Wallet Pass Issuance...');
     const applePass = await makeRequest('GET', '/api/tickets/tkt_001/apple-pass');
     console.assert(applePass.statusCode === 200, 'Apple pass issuance failed');
     console.assert(applePass.headers['content-type'] === 'application/vnd.apple.pkpass', 'Invalid Apple pass content-type');
@@ -90,7 +100,7 @@ async function runE2ETests() {
     console.log(`  ✅ Google Wallet Save URL generated: ${googlePass.body.saveUrl.substring(0, 60)}...`);
 
     // 3. Dynamic TOTP Gate Check-In & Anti-Replay
-    console.log('\n[3/4] Testing Dynamic TOTP Gate Verification & Anti-Replay Cache...');
+    console.log('\n[3/6] Testing Dynamic TOTP Gate Verification & Anti-Replay Cache...');
     const secret = eventsService.tickets.get('tkt_001').secret;
     const totpToken = authenticator.generate(secret);
 
@@ -111,8 +121,48 @@ async function runE2ETests() {
     console.assert(scan2.statusCode === 409, 'Replay attack check failed (Expected 409 Conflict)');
     console.log('  ✅ Replay attack correctly blocked (HTTP 409 Conflict)');
 
-    // 4. Signed Receipt Issuance, Offline Verification & Reconciliation
-    console.log('\n[4/4] Testing Signed Receipt Issuance & Offline Reconciliation Protocol...');
+    // 4. No-Device Static QR & Short Code Issuance + Gate Verification
+    console.log('\n[4/6] Testing Static QR Code & Short Code Ticket Issuance & Gate Scanning...');
+    const issueStatic = await makeRequest('POST', '/api/tickets', {
+      eventId: 'evt_101',
+      codeMode: 'STATIC',
+      holderName: 'E2E Paper Holder',
+      holderPhone: '+15145557777'
+    });
+    console.assert(issueStatic.statusCode === 201, 'Static ticket issuance failed');
+    console.assert(issueStatic.body.qrPayload, 'Missing qrPayload');
+    console.assert(issueStatic.body.shortCode, 'Missing shortCode');
+    const staticTicketId = issueStatic.body.ticket.id;
+    console.log(`  ✅ Static ticket issued successfully (ID: ${staticTicketId}, ShortCode: ${issueStatic.body.shortCode})`);
+
+    // Verify Short Code Scan
+    const scanShortCode = await makeRequest('POST', '/api/passes/verify', {
+      method: 'SHORT_CODE',
+      code: issueStatic.body.shortCode,
+      eventId: 'evt_101'
+    });
+    console.assert(scanShortCode.statusCode === 200, 'Short code scan failed');
+    console.assert(scanShortCode.body.status === 'CHECKED_IN', 'Expected status CHECKED_IN');
+    console.log('  ✅ Short code gate scan successful');
+
+    // 5. Gate Candidate Lookup & Lookup Verification
+    console.log('\n[5/6] Testing Gate Candidate Lookup & ID-Checked Verification...');
+    const lookupRes = await makeRequest('POST', '/api/lookup', {
+      eventId: 'evt_101',
+      phone: '5145557777'
+    });
+    console.assert(lookupRes.statusCode === 200, 'Lookup query failed');
+    console.assert(lookupRes.body.count === 1, 'Expected 1 lookup candidate');
+    const lookupToken = lookupRes.body.candidates[0].lookupToken;
+    console.log(`  ✅ Lookup candidate found (MaskedName: ${lookupRes.body.candidates[0].maskedName})`);
+
+    // 6. Signed Receipt Issuance, Offline Manifest & Reconciliation Protocol
+    console.log('\n[6/6] Testing Offline Manifest, Signed Receipt & Reconciliation Protocol...');
+    const manifestRes = await makeRequest('GET', '/api/events/evt_101/manifest');
+    console.assert(manifestRes.statusCode === 200, 'Manifest retrieval failed');
+    console.assert(manifestRes.body.count > 0, 'Expected non-empty offline manifest');
+    console.log(`  ✅ Offline manifest retrieved (${manifestRes.body.count} static tickets)`);
+
     const receiptIssuance = await makeRequest('POST', '/api/passes/issue-receipt', {
       ticketId: 'tkt_e2e_reconcile',
       format: 'JWS',

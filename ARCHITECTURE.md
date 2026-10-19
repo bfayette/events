@@ -27,23 +27,53 @@ High-level components
   - Use short-lived signed receipts (JWS) that encode ticket_id, nonce, issued_at, expires_at, and a signature by operator key.
   - Keep offline tokens TTL very short (e.g., 30–120s) and single-use. Prefer short-distance validators that sync frequently.
 
-Data model suggestions
+Multi-Carrier Architecture (Tickets for People Without Smartphones)
+
+Separate **what was bought** (the ticket) from **how the holder proves ownership** (the carrier):
+
+| Carrier | Proof Type | Scan Method Enum |
+|---|---|---|
+| Wallet Pass / Smartphone | Rotating TOTP | `TOTP` |
+| Printed Slip | Signed JWS QR Code (Static) | `STATIC_QR` |
+| Printed Slip or SMS | Typed 8-Char Short Code | `SHORT_CODE` |
+| No Device / Paper Lost | Gate Staff Name/Phone Lookup | `LOOKUP` |
+
+Role-Based Access Control (RBAC) Architecture
+- `sales`: Issue tickets, print / reissue-at-issue. No scan or lookup access.
+- `verifier`: Scan gate codes (`TOTP`, `STATIC_QR`, `SHORT_CODE`, `LOOKUP`), lookup, confirm entry. Event-scoped.
+- `agent`: Everything `sales` does plus reissue with `phone_lookup` or `id_check`.
+- `admin`: Full system access, `admin_override` reissue, and revocation.
+
+Data model (Postgres & In-Memory Store)
 
 tickets
-- id (uuid)
-- event_id
-- pass_type
-- owner_email
-- status ENUM (ISSUED, CHECKED_IN, TRANSFERRED, REVOKED)
-- metadata JSON
+- id (varchar 64)
+- event_id (varchar 64)
+- owner_email (varchar 255, nullable)
+- secret (varchar 128, nullable for static tickets)
+- status ENUM (ISSUED, ACTIVE, CHECKED_IN, REDEEMED, REVOKED)
+- code_mode ENUM (TOTP, STATIC)
+- version INT (default 1)
+- max_entries INT (default 1)
+- entries_used INT (default 0)
+- holder_name VARCHAR(128, nullable)
+- holder_phone VARCHAR(20, nullable, E.164)
+- holder_binding JSONB (default `{"type":"none"}`)
+- short_code_hash VARCHAR(64, nullable, HMAC-SHA256)
+- reissue_count INT (default 0)
+- metadata JSONB
 - created_at, updated_at
 
-audit_log (append-only audit log)
-- id (uuid)
-- ticket_id
-- action ENUM (ISSUE, UPDATE, CHECKIN, REDEEM, REVOKE)
-- actor (user_email / operator / system)
-- payload_hash (sha256 of payload)
+events (append-only audit log)
+- id (varchar 64)
+- ticket_id (varchar 64)
+- action ENUM (ISSUE, ISSUE_STATIC, UPDATE, CHECKIN, CHECKIN_DENIED, CHECKIN_OFFLINE, CHECKIN_CONFLICT, LOOKUP, REISSUE, REDEEM, REVOKE)
+- actor (keyLabel)
+- payload_hash (sha256)
+- status_transition (varchar 64)
+- method ENUM (TOTP, STATIC_QR, SHORT_CODE, LOOKUP)
+- result VARCHAR(32)
+- meta JSONB
 - created_at
 
 Signed receipt format (overview)
