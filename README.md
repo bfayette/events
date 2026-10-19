@@ -1,6 +1,43 @@
 # Headless Ticketing & Loyalty Platform
 
-A headless ticketing and loyalty platform built with Node.js and Express. It issues Apple Wallet `.pkpass` files and Google Wallet passes for event tickets and loyalty cards, and validates entry scans using TOTP-based gate checks.
+A headless ticketing and loyalty platform built with Node.js and Express. It issues Apple Wallet `.pkpass` files and Google Wallet passes for event tickets and loyalty cards, and validates entry scans. This README focuses on typical operator usage and the recent addition of non‑smartphone ticket carriers (printed slips, short codes, and staff lookup).
+
+---
+
+## Typical usage (operator view)
+
+- Issue tickets for an event (sales or agent role). The service returns the carrier material once: a wallet pass URL for device-native passes, or printed material / short code for non‑smartphone carriers.
+- At the gate, verifiers validate presented proof using `POST /api/passes/verify` (TOTP wallet pass, scanned signed QR for printed slips, typed short code, or staff lookup token).
+- When a ticket is lost, authorized agents can reissue a ticket using recovery workflows; reissue increments the ticket version and invalidates prior proof.
+- Offline gate devices can download a manifest of static tickets (`GET /api/events/:id/manifest`) to verify signed printed slips while offline; later reconcile uploads resolve any conflicts.
+- Audit history and reconcile tools provide a privacy-safe forensic trail for disputes and accounting (audit payloads never contain plaintext short codes or full phone numbers).
+
+---
+
+## Non‑smartphone ticket carriers (what changed)
+
+This service now supports carriers that do not require a smartphone. Each carrier represents a different proof method and has different operational and security characteristics:
+
+- STATIC (printed signed QR)
+  - What: A short, signed JWS encoded as a QR that is printed on paper or displayed from any device.
+  - How verification works: The verifier scans the QR, validates the JWS signature and `use:'static_ticket'` claim, then checks the ticket record (version, entries remaining, status). Because the token is signed, verifiers with the operator key can validate offline.
+  - Best for: buses, remote gates, and printed slips where offline verification is required.
+
+- SHORT_CODE (8-character typed code shown as `XXXX-XXXX`)
+  - What: A human-friendly short code that can be read aloud or typed on a basic phone.
+  - How verification works: The service returns the plaintext short code once at issuance, but stores only an HMAC of the code. At verification, the code is normalized and HMACed to look up the ticket for the event. This requires an online lookup, and strong rate limiting is enforced to prevent guessing.
+  - Best for: holders with basic phones (SMS or voice) or when printing is unavailable.
+  - Important: By default short codes are online-only and are NOT included in offline manifests (to prevent brute-force exposure). If you want manifest inclusion, that is a separate product decision.
+
+- LOOKUP (staff-assisted)
+  - What: Manual staff lookup by phone or name producing a single-use lookup token the staff can use to confirm and then consume an entry.
+  - How verification works: `POST /api/lookup` returns masked candidates and a `lookupToken` bound to the verifier and ticket. `POST /api/passes/verify` with `method: 'LOOKUP'` and that token completes the check-in, recording whether an ID was checked.
+  - Best for: cash walk-ups and people without devices or printed slips.
+
+Security & privacy notes for non‑smartphone carriers
+- The backend never stores plaintext short codes — only HMAC-SHA256 hashes derived from an operator secret (via HKDF). Short codes are shown only once on issue and are never logged.
+- Audit logs store only non‑PII metadata and hashes. Full phone numbers and short codes are never saved in raw form.
+- Reissue bumps ticket `version` and invalidates prior static QR and short codes; old proofs return `DENIED_SUPERSEDED`.
 
 ---
 
@@ -8,175 +45,67 @@ A headless ticketing and loyalty platform built with Node.js and Express. It iss
 
 ### 1. Application Model
 - **API layer:** Express service exposes event, pass, and verification endpoints.
-- **Pass issuance:** Produces Apple Wallet `.pkpass` archives and Google Wallet JWT links for event tickets and loyalty cards.
-- **Gate validation:** Uses TOTP-based validation and a replay cache to prevent duplicate scans.
+- **Pass issuance:** Produces Apple Wallet `.pkpass` archives and Google Wallet JWT links for event tickets and loyalty cards. Also issues static QR payloads and short codes for non‑smartphone carriers.
+- **Gate validation:** Uses TOTP-based validation for wallet passes and a unified consumeEntry flow for static QR, short codes, and lookup tokens.
 
 ### 2. Ticketing & Loyalty Scope
-- **Ticketing:** Event access, scan validation, and status transitions.
+- **Ticketing:** Event access, carrier issuance, scan validation, status transitions, reissue and offline manifest support.
 - **Loyalty:** Pass issuance, personalized offers, and points or redemption flows.
 
 ---
 
 ## Key Features & Architecture
 
-### 1. Device-Native Wallet Passes
+### Device-Native Wallet Passes
 - **Apple Wallet (`.pkpass`):** Dynamic pass archives compliant with PassKit for event tickets and loyalty cards.
 - **Google Wallet (JWT):** Signed JWT links for pass issuance and Google Wallet object generation.
 - **Dynamic barcodes:** Pass barcodes contain rotating TOTP tokens for short-lived validation.
 
-### 2. Gate Verification & Anti-Replay Engine
+### Gate Verification & Anti-Replay Engine
 - **Endpoint:** `POST /api/passes/verify`
 - **Dynamic TOTP validation:** Validates ticket or pass codes against a short-lived rotating secret.
-- **Replay protection:** Uses a single-use cache and TTL to reject duplicate scans.
-- **Atomic status transitions:** Moves tickets from active to checked-in or otherwise consumed states.
+- **Replay protection & atomic transitions:** Single-use replay cache and atomic entries consumption to prevent double scans. Multi-entry tickets (group passes) are tracked with `max_entries` and `entries_used`.
 
 ---
 
 ## Configuration
 
-The application uses validated environment configuration. In production environments, required secrets must be supplied and meet length and security constraints. In development and test environments, missing secrets are automatically generated as ephemeral random secrets per process.
+The application uses validated environment configuration. In production environments, required secrets must be supplied and meet length and security constraints.
 
-### Environment Variables
+### Environment Variables (highlights)
 
 | Variable | Required in Production? | Default | Description |
 |---|---|---|---|
 | `NODE_ENV` | No | `development` | Application environment (`development`, `test`, `production`). |
-| `PORT` | No | `3000` | HTTP server listening port. |
-| `OPERATOR_KEY_ID` | No | `op-key-1` | Active key ID (`kid`) used for signing JWS receipts. |
-| `OPERATOR_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for active operator key receipt signing. Must not be a known insecure default. |
-| `OPERATOR_PREVIOUS_KEYS` | No | `{}` | JSON map of previous `kid` to secret used solely for verifying receipts during key rotation. Each secret must be at least 32 chars. |
-| `GOOGLE_WALLET_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for Google Wallet save URL JWT signatures. Must not be a known insecure default. |
 | `AUTH_ENFORCED` | No | `true` in prod, `false` in dev/test | Enforces API key role-based access control middleware. |
 | `API_KEYS` | Yes in prod (min 32 chars per key) | `{}` (dev/test) | JSON map of API keys to `{ role, eventIds, label }`. Roles: `sales`, `verifier`, `agent`, `admin`. |
+| `OPERATOR_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for active operator key receipt and static-code signing. Must not be a known insecure default. |
 | `HOLDER_DATA_RETENTION_DAYS` | No | `30` | PII retention window in days after event end date before `purgeExpiredHolderData()` nulls PII. |
-| `MAX_REISSUES_PER_TICKET` | No | `3` | Reissue cap per ticket before requiring `admin_override`. |
-| `SEED_DEMO_DATA` | No | `true` in dev/test, `false` in prod | Populates in-memory stores with demo fixtures outside production. Setting `SEED_DEMO_DATA=true` in production fails startup. |
 
-### Generating Secrets
-
-Secrets can be generated using OpenSSL:
-```bash
-openssl rand -base64 48
-```
-
-### Key Rotation Procedure
-
-To rotate signing keys without invalidating unexpired offline receipts:
-1. Generate a new secret using `openssl rand -base64 48`.
-2. Update `OPERATOR_KEY_ID` to the new key ID (e.g. `op-key-2`) and `OPERATOR_SECRET` to the new secret.
-3. Move the previous active key ID and secret into `OPERATOR_PREVIOUS_KEYS` as a JSON string:
-   ```bash
-   OPERATOR_PREVIOUS_KEYS='{"op-key-1":"<old_secret_value>"}'
-   ```
-4. Key verification will automatically verify receipts signed with previous keys, while all new receipts are signed exclusively with the active key.
-5. Once all receipts signed by the old key have expired, remove the key entry from `OPERATOR_PREVIOUS_KEYS`.
-
-Note on Receipt Signing: Receipts are HS256-signed using an operator secret loaded from the environment. Asymmetric signing is planned for future phases.
+See the full table in the existing README for other variables and guidance on generating secrets and key rotation.
 
 ---
 
-## Directory Structure
+## API Endpoints (operator-focused)
 
-```
-src/
-├── app.js                   # Main Express application configuration
-├── config.js                # Central validated configuration loader
-├── server.js                # Server entrypoint
-├── app.test.js              # Server health test
-└── modules/
-    ├── events/              # Event, ticket, and loyalty data models + seed fixtures
-    ├── passes/              # Apple .pkpass and Google Wallet pass generation
-    └── validation/          # TOTP gate verification and anti-replay logic
+- `POST /api/tickets` — Issue ticket and carrier material (`sales`, `agent`, `admin`): supports `codeMode: 'TOTP'` (wallet pass) and `codeMode: 'STATIC'` (printed QR + optional short code).
+- `POST /api/tickets/:id/reissue` — Reissue ticket with recovery method (`agent`, `admin`): increments version, returns new carrier material once.
+- `POST /api/passes/verify` — Validate presented proof (`verifier` role). Supports `method`: `TOTP` (default), `STATIC_QR`, `SHORT_CODE`, `LOOKUP`.
+- `POST /api/lookup` — Staff manual lookup to produce a masked candidate list and a one-time `lookupToken` (`verifier` role).
+- `GET /api/events/:id/manifest` — Download offline manifest for static tickets (`verifier` role). Manifests exclude plaintext short codes by default.
+- `POST /api/passes/reconcile` — Batch reconcile offline scan receipts and resolve conflicts.
 
-docs/
-└── E2E_GUIDE.md             # Detailed sandbox manual and automated E2E testing guide
-
-scripts/
-└── e2e-test.js              # Automated E2E verification test runner
-```
+Authentication: `Authorization: Bearer <api_key>` is used for operator keys. When `AUTH_ENFORCED=false` in dev/test environments, unauthenticated requests default to admin role for developer convenience (startup logs an enforcement warning).
 
 ---
 
 ## Getting Started
 
-### Prerequisites
-- **Node.js**: v18.x or higher
-- **npm**: v9.x or higher
-
-### Installation
-1. Clone the repository and navigate into the root directory:
-   ```bash
-   git clone https://github.com/bfayette/events.git
-   cd events
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Create local environment configuration:
-   ```bash
-   cp .env.example .env.development
-   ```
-
-### Running the Server
-- **Development mode:**
-  ```bash
-  npm run dev
-  ```
-- **Production mode:**
-  ```bash
-  npm start
-  ```
+Follow the same Getting Started steps as before (clone, npm install, copy .env, run dev). See the full README for testing, architecture details, and the E2E guide.
 
 ---
 
-## Testing & Sandbox E2E Verification
+## Docs & Next Steps
 
-### 1. Automated Unit & Integration Tests (Jest)
-Run all Jest test suites covering pass mapping and TOTP gate checks:
-```bash
-npm test
-```
+- See `docs/E2E_GUIDE.md` for sandbox flows and `docs/NO_DEVICE_TICKETS.md` (planned) for worked examples of printed slips, short-code SMS, staff lookup, family/group passes, and lost-ticket reissue scenarios.
 
-### 2. Automated Sandbox E2E Suite
-Run the automated end-to-end sandbox verification runner:
-```bash
-npm run test:e2e
-```
-
-### 3. Manual E2E Testing Guide
-For step-by-step cURL commands and sandbox verification flows, consult [docs/E2E_GUIDE.md](docs/E2E_GUIDE.md).
-
----
-
-## API Endpoints Overview
-
-Authentication is performed via HTTP header `Authorization: Bearer <api_key>` (or `X-API-Key`). When `AUTH_ENFORCED=false` in dev/test environments, unauthenticated requests default to `admin` role with keyLabel `"dev"`.
-
-### 1. Healthcheck
-- `GET /health` — Check API service status
-
-### 2. Events & Manifests
-- `GET /api/events` — Retrieve list of events
-- `GET /api/events/:id` — Retrieve event details
-- `GET /api/events/:id/manifest` — Download offline manifest for static tickets (`verifier` role)
-
-### 3. Ticket Issuance & Reissue
-- `POST /api/tickets` — Issue ticket with carrier material (`sales`, `agent`, `admin` roles; supports `codeMode: 'TOTP'` or `'STATIC'`)
-- `POST /api/tickets/:id/reissue` — Reissue ticket with recovery method (`agent`, `admin` roles)
-
-### 4. Gate Lookup
-- `POST /api/lookup` — Search holder candidates for gate staff manual lookup (`verifier` role)
-
-### 5. Wallet Passes (Apple & Google)
-- `GET /api/tickets/:id/apple-pass` — Download Apple Wallet `.pkpass` file
-- `GET /api/tickets/:id/google-pass-url` — Get "Save to Google Wallet" link
-- `GET /api/loyalty/:id/apple-pass` — Download Apple Loyalty `.pkpass` file
-- `GET /api/loyalty/:id/google-pass-url` — Get Google Wallet Loyalty link
-
-### 6. Gate Verification & Offline Receipts
-- `POST /api/passes/verify` — Validate entry scan (`verifier` role; supports `method`: `TOTP`, `STATIC_QR`, `SHORT_CODE`, `LOOKUP`)
-- `POST /api/passes/issue-receipt` — Issue signed JWS receipt (`verifier`, `agent`, `sales` roles)
-- `POST /api/passes/verify-receipt` — Verify a single JWS receipt token (`verifier` role)
-- `POST /api/passes/reconcile` — Batch reconcile offline scan receipts (`verifier` role)
-- `GET /api/passes/tickets/:id/events` — Retrieve audit event history for a ticket
