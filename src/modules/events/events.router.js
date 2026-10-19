@@ -38,7 +38,8 @@ router.get('/:id/manifest', requireRole('verifier'), (req, res) => {
       if (rawTicket.eventId === eventId && rawTicket.code_mode === 'STATIC') {
         const tkt = eventsService.getTicketWithDefaults(rawTicket);
         manifest.push({
-          ticket_id: tkt.id,
+          ticket_id: tkt.public_ref,
+          public_ref: tkt.public_ref,
           version: tkt.version,
           entries_used: tkt.entries_used,
           max_entries: tkt.max_entries,

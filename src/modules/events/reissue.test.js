@@ -6,7 +6,6 @@ const { hashShortCode } = require('../passes/shortcode.service');
 
 describe('Phase F: Ticket Reissue & Recovery Flow', () => {
   beforeEach(() => {
-    // Setup event and static ticket
     eventsService.events.set('evt_reissue_100', {
       id: 'evt_reissue_100',
       name: 'Reissue Test Event',
@@ -16,7 +15,6 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
   });
 
   it('reissues ticket, bumps version and reissue_count, and generates new QR & short code while preserving entries_used', async () => {
-    // Issue initial STATIC ticket v1
     const issueRes = await request(app)
       .post('/api/tickets')
       .send({
@@ -27,17 +25,15 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
         maxEntries: 2
       });
 
-    const ticketId = issueRes.body.ticket.id;
+    const ticketRef = issueRes.body.ticket.public_ref;
     const oldQrPayload = issueRes.body.qrPayload;
     const oldShortCode = issueRes.body.shortCode;
 
-    // Simulate 1 entry consumed on this group pass
-    const tktRecord = eventsService.tickets.get(ticketId);
+    const tktRecord = eventsService.getTicketByPublicRef(ticketRef);
     tktRecord.entries_used = 1;
 
-    // Perform reissue with recoveryMethod: 'phone_lookup'
     const reissueRes = await request(app)
-      .post(`/api/tickets/${ticketId}/reissue`)
+      .post(`/api/tickets/${ticketRef}/reissue`)
       .send({
         recoveryMethod: 'phone_lookup'
       });
@@ -45,11 +41,11 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
     expect(reissueRes.status).toBe(200);
     expect(reissueRes.body.ticket.version).toBe(2);
     expect(reissueRes.body.ticket.reissue_count).toBe(1);
-    expect(reissueRes.body.ticket.entries_used).toBe(1); // entries_used PRESERVED!
+    expect(reissueRes.body.ticket.entries_used).toBe(1);
     expect(reissueRes.body.qrPayload).not.toBe(oldQrPayload);
     expect(reissueRes.body.shortCode).not.toBe(oldShortCode);
+    expect(reissueRes.body.holderToken).toBeDefined();
 
-    // Verify old QR payload gives DENIED_SUPERSEDED
     const scanOldQr = await request(app)
       .post('/api/passes/verify')
       .send({
@@ -61,7 +57,6 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
     expect(scanOldQr.status).toBe(400);
     expect(scanOldQr.body.code).toBe('DENIED_SUPERSEDED');
 
-    // Verify old short code no longer matches
     const scanOldShort = await request(app)
       .post('/api/passes/verify')
       .send({
@@ -75,9 +70,9 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
   });
 
   it('refuses reissue on fully used ticket unless admin_override', async () => {
-    // Setup fully used ticket
     eventsService.tickets.set('tkt_used_up', {
       id: 'tkt_used_up',
+      public_ref: 'ref_used_up',
       eventId: 'evt_reissue_100',
       status: 'CHECKED_IN',
       code_mode: 'STATIC',
@@ -87,9 +82,8 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
       owner_email: 'used@example.com'
     });
 
-    // Attempt reissue with id_check -> fails 400
     const resNormal = await request(app)
-      .post('/api/tickets/tkt_used_up/reissue')
+      .post('/api/tickets/ref_used_up/reissue')
       .send({
         recoveryMethod: 'id_check'
       });
@@ -97,9 +91,8 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
     expect(resNormal.status).toBe(400);
     expect(resNormal.body.message).toContain('fully used or revoked');
 
-    // Attempt admin_override WITHOUT note -> fails 400
     const resNoNote = await request(app)
-      .post('/api/tickets/tkt_used_up/reissue')
+      .post('/api/tickets/ref_used_up/reissue')
       .send({
         recoveryMethod: 'admin_override'
       });
@@ -107,9 +100,8 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
     expect(resNoNote.status).toBe(400);
     expect(resNoNote.body.message).toContain('non-empty note');
 
-    // Attempt admin_override WITH note -> succeeds 200
     const resWithNote = await request(app)
-      .post('/api/tickets/tkt_used_up/reissue')
+      .post('/api/tickets/ref_used_up/reissue')
       .send({
         recoveryMethod: 'admin_override',
         note: 'Customer lost printout at entrance gate'
@@ -122,19 +114,19 @@ describe('Phase F: Ticket Reissue & Recovery Flow', () => {
   it('enforces maximum reissue cap (3 reissues) unless admin_override', async () => {
     eventsService.tickets.set('tkt_capped', {
       id: 'tkt_capped',
+      public_ref: 'ref_capped',
       eventId: 'evt_reissue_100',
       status: 'ISSUED',
       code_mode: 'STATIC',
       version: 3,
-      reissue_count: 3, // Already reissued 3 times
+      reissue_count: 3,
       max_entries: 1,
       entries_used: 0,
       owner_email: 'capped@example.com'
     });
 
-    // 4th reissue without override -> fails 400
     const resCapped = await request(app)
-      .post('/api/tickets/tkt_capped/reissue')
+      .post('/api/tickets/ref_capped/reissue')
       .send({
         recoveryMethod: 'phone_lookup'
       });

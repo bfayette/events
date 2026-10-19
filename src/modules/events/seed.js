@@ -21,12 +21,14 @@ const demoTickets = [
     'tkt_001',
     {
       id: 'tkt_001',
+      public_ref: 'ref_demo_tkt_001_seed_2025',
       eventId: 'evt_101',
       owner_email: 'buyer@example.com',
       secret: 'JBSWY3DPEHPK3PXP', // Base32 secret for demo TOTP verification
       seat: 'A-12',
       section: 'VIP',
-      status: 'ISSUED' // ISSUED, CHECKED_IN, TRANSFERRED, REDEEMED, REVOKED
+      status: 'ISSUED', // ISSUED, CHECKED_IN, TRANSFERRED, REDEEMED, REVOKED
+      version: 1
     }
   ]
 ];
