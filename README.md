@@ -46,6 +46,10 @@ The application uses validated environment configuration. In production environm
 | `OPERATOR_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for active operator key receipt signing. Must not be a known insecure default. |
 | `OPERATOR_PREVIOUS_KEYS` | No | `{}` | JSON map of previous `kid` to secret used solely for verifying receipts during key rotation. Each secret must be at least 32 chars. |
 | `GOOGLE_WALLET_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for Google Wallet save URL JWT signatures. Must not be a known insecure default. |
+| `AUTH_ENFORCED` | No | `true` in prod, `false` in dev/test | Enforces API key role-based access control middleware. |
+| `API_KEYS` | Yes in prod (min 32 chars per key) | `{}` (dev/test) | JSON map of API keys to `{ role, eventIds, label }`. Roles: `sales`, `verifier`, `agent`, `admin`. |
+| `HOLDER_DATA_RETENTION_DAYS` | No | `30` | PII retention window in days after event end date before `purgeExpiredHolderData()` nulls PII. |
+| `MAX_REISSUES_PER_TICKET` | No | `3` | Reissue cap per ticket before requiring `admin_override`. |
 | `SEED_DEMO_DATA` | No | `true` in dev/test, `false` in prod | Populates in-memory stores with demo fixtures outside production. Setting `SEED_DEMO_DATA=true` in production fails startup. |
 
 ### Generating Secrets
@@ -147,24 +151,32 @@ For step-by-step cURL commands and sandbox verification flows, consult [docs/E2E
 
 ## API Endpoints Overview
 
-Note: These endpoints currently have no authentication and use in-memory storage (they are being replaced in later phases).
+Authentication is performed via HTTP header `Authorization: Bearer <api_key>` (or `X-API-Key`). When `AUTH_ENFORCED=false` in dev/test environments, unauthenticated requests default to `admin` role with keyLabel `"dev"`.
 
 ### 1. Healthcheck
 - `GET /health` — Check API service status
 
-### 2. Events & Loyalty
+### 2. Events & Manifests
 - `GET /api/events` — Retrieve list of events
 - `GET /api/events/:id` — Retrieve event details
+- `GET /api/events/:id/manifest` — Download offline manifest for static tickets (`verifier` role)
 
-### 3. Wallet Passes (Apple & Google)
+### 3. Ticket Issuance & Reissue
+- `POST /api/tickets` — Issue ticket with carrier material (`sales`, `agent`, `admin` roles; supports `codeMode: 'TOTP'` or `'STATIC'`)
+- `POST /api/tickets/:id/reissue` — Reissue ticket with recovery method (`agent`, `admin` roles)
+
+### 4. Gate Lookup
+- `POST /api/lookup` — Search holder candidates for gate staff manual lookup (`verifier` role)
+
+### 5. Wallet Passes (Apple & Google)
 - `GET /api/tickets/:id/apple-pass` — Download Apple Wallet `.pkpass` file
 - `GET /api/tickets/:id/google-pass-url` — Get "Save to Google Wallet" link
 - `GET /api/loyalty/:id/apple-pass` — Download Apple Loyalty `.pkpass` file
 - `GET /api/loyalty/:id/google-pass-url` — Get Google Wallet Loyalty link
 
-### 4. Gate Verification & Offline Receipts
-- `POST /api/passes/verify` — Validate a scanned TOTP code and update ticket status
-- `POST /api/passes/issue-receipt` — Issue signed JWS receipt
-- `POST /api/passes/verify-receipt` — Verify a single JWS receipt token
-- `POST /api/passes/reconcile` — Batch reconcile offline scan receipts
+### 6. Gate Verification & Offline Receipts
+- `POST /api/passes/verify` — Validate entry scan (`verifier` role; supports `method`: `TOTP`, `STATIC_QR`, `SHORT_CODE`, `LOOKUP`)
+- `POST /api/passes/issue-receipt` — Issue signed JWS receipt (`verifier`, `agent`, `sales` roles)
+- `POST /api/passes/verify-receipt` — Verify a single JWS receipt token (`verifier` role)
+- `POST /api/passes/reconcile` — Batch reconcile offline scan receipts (`verifier` role)
 - `GET /api/passes/tickets/:id/events` — Retrieve audit event history for a ticket

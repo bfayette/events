@@ -108,3 +108,69 @@ curl -X POST "http://localhost:3000/api/passes/verify" \
   "message": "Replay attack detected: Token has already been scanned"
 }
 ```
+
+---
+
+### Step E: Static QR Code & Short Code Ticket Issuance & Verification
+
+#### 1. Issue Static Ticket
+```bash
+curl -X POST "http://localhost:3000/api/tickets" \
+  -H "Authorization: Bearer <sales_key_min_32_characters_12345>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventId": "evt_101",
+    "codeMode": "STATIC",
+    "holderName": "Marie Curie",
+    "holderPhone": "+15145551234"
+  }'
+```
+
+#### 2. Gate Verification by Short Code
+```bash
+curl -X POST "http://localhost:3000/api/passes/verify" \
+  -H "Authorization: Bearer <verifier_key_min_32_characters_12345>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "method": "SHORT_CODE",
+    "code": "<short_code_from_issuance>",
+    "eventId": "evt_101"
+  }'
+```
+
+---
+
+### Step F: Candidate Lookup & Ticket Reissue
+
+#### 1. Search Gate Candidate
+```bash
+curl -X POST "http://localhost:3000/api/lookup" \
+  -H "Authorization: Bearer <verifier_key_min_32_characters_12345>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventId": "evt_101",
+    "phone": "+15145551234"
+  }'
+```
+
+#### 2. Confirm Entry with Photo ID Check
+```bash
+curl -X POST "http://localhost:3000/api/passes/verify" \
+  -H "Authorization: Bearer <verifier_key_min_32_characters_12345>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "method": "LOOKUP",
+    "lookupToken": "<token_from_lookup_candidate>",
+    "idChecked": true
+  }'
+```
+
+#### 3. Reissue Lost Ticket
+```bash
+curl -X POST "http://localhost:3000/api/tickets/<ticket_id>/reissue" \
+  -H "Authorization: Bearer <agent_key_min_32_characters_12345>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recoveryMethod": "phone_lookup"
+  }'
+```
