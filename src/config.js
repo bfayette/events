@@ -129,6 +129,11 @@ function loadConfig(env = process.env) {
 
   const operatorSecret = validateSecret('OPERATOR_SECRET', env.OPERATOR_SECRET);
   const googleWalletSecret = validateSecret('GOOGLE_WALLET_SECRET', env.GOOGLE_WALLET_SECRET);
+  const holderTokenSecret = validateSecret('HOLDER_TOKEN_SECRET', env.HOLDER_TOKEN_SECRET);
+
+  if (nodeEnv === 'production' && holderTokenSecret && operatorSecret && holderTokenSecret === operatorSecret) {
+    errors.push('HOLDER_TOKEN_SECRET must not equal OPERATOR_SECRET');
+  }
 
   // 6. AUTH_ENFORCED
   let authEnforced = nodeEnv === 'production';
@@ -201,11 +206,33 @@ function loadConfig(env = process.env) {
   const retentionNum = parseInt(rawRetention, 10);
   const holderDataRetentionDays = isNaN(retentionNum) || retentionNum < 1 ? 30 : retentionNum;
 
-  // 9. RATE LIMITS
+  // 9. HOLDER_TOKEN_TTL_DAYS
+  const rawHolderTtl = env.HOLDER_TOKEN_TTL_DAYS !== undefined && env.HOLDER_TOKEN_TTL_DAYS !== '' ? env.HOLDER_TOKEN_TTL_DAYS : 7;
+  const holderTtlNum = parseInt(rawHolderTtl, 10);
+  const holderTokenTtlDays = isNaN(holderTtlNum) || holderTtlNum < 1 ? 7 : holderTtlNum;
+
+  // 10. TRUST_PROXY
+  let trustProxy = false;
+  const rawTrustProxy = env.TRUST_PROXY;
+  if (rawTrustProxy !== undefined && rawTrustProxy !== '') {
+    if (typeof rawTrustProxy === 'boolean') {
+      trustProxy = rawTrustProxy;
+    } else if (rawTrustProxy === 'true') {
+      trustProxy = true;
+    } else if (rawTrustProxy === 'false') {
+      trustProxy = false;
+    } else {
+      errors.push(`TRUST_PROXY must be 'true' or 'false'`);
+    }
+  }
+
+  // 11. RATE LIMITS
   const verifierRateLimit = parseInt(env.RATE_LIMIT_VERIFIER_FAILS_PER_MIN || '5', 10);
   const eventRateLimit = parseInt(env.RATE_LIMIT_EVENT_FAILS_PER_MIN || '30', 10);
+  const passRequestsRateLimit = parseInt(env.RATE_LIMIT_PASS_REQUESTS_PER_MIN || '60', 10);
+  const passFailsRateLimit = parseInt(env.RATE_LIMIT_PASS_FAILS_PER_MIN || '10', 10);
 
-  // 10. REISSUE CAP
+  // 12. REISSUE CAP
   const maxReissues = parseInt(env.MAX_REISSUES_PER_TICKET || '3', 10);
 
   return Object.freeze({
@@ -215,12 +242,17 @@ function loadConfig(env = process.env) {
     operatorSecret,
     operatorPreviousKeys,
     googleWalletSecret,
+    holderTokenSecret,
+    holderTokenTtlDays,
+    trustProxy,
     seedDemoData,
     authEnforced,
     apiKeys,
     holderDataRetentionDays,
     rateLimitVerifierFailsPerMin: isNaN(verifierRateLimit) ? 5 : verifierRateLimit,
     rateLimitEventFailsPerMin: isNaN(eventRateLimit) ? 30 : eventRateLimit,
+    rateLimitPassRequestsPerMin: isNaN(passRequestsRateLimit) ? 60 : passRequestsRateLimit,
+    rateLimitPassFailsPerMin: isNaN(passFailsRateLimit) ? 10 : passFailsRateLimit,
     maxReissuesPerTicket: isNaN(maxReissues) ? 3 : maxReissues
   });
 }

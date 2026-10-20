@@ -7,23 +7,34 @@ describe('Configuration Loader & Validation (loadConfig)', () => {
     OPERATOR_KEY_ID: 'op-key-prod-1',
     OPERATOR_SECRET: 'a_very_long_production_operator_secret_1234567890_32chars',
     GOOGLE_WALLET_SECRET: 'a_very_long_production_google_wallet_secret_1234567890_32chars',
+    HOLDER_TOKEN_SECRET: 'a_very_long_production_holder_token_secret_1234567890_32chars',
     API_KEYS: JSON.stringify({ 'a_very_long_production_api_key_32_chars_12345': { role: 'admin', label: 'Prod Key' } })
   };
 
   describe('Production Environment Rules', () => {
-    it('throws when OPERATOR_SECRET or GOOGLE_WALLET_SECRET is missing, naming variables with no secret values', () => {
+    it('throws when OPERATOR_SECRET, GOOGLE_WALLET_SECRET, or HOLDER_TOKEN_SECRET is missing, naming variables with no secret values', () => {
       expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/OPERATOR_SECRET/);
       expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/GOOGLE_WALLET_SECRET/);
+      expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/HOLDER_TOKEN_SECRET/);
 
       try {
         loadConfig({ NODE_ENV: 'production' });
       } catch (err) {
         expect(err.message).toContain('OPERATOR_SECRET is required in production');
         expect(err.message).toContain('GOOGLE_WALLET_SECRET is required in production');
+        expect(err.message).toContain('HOLDER_TOKEN_SECRET is required in production');
         // Ensure no secret values leaked in error message
         expect(err.message).not.toContain('dev_secret_key');
         expect(err.message).not.toContain('kms-operator-secret');
       }
+    });
+
+    it('throws when HOLDER_TOKEN_SECRET equals OPERATOR_SECRET in production', () => {
+      const sameSecretEnv = {
+        ...validProdEnv,
+        HOLDER_TOKEN_SECRET: validProdEnv.OPERATOR_SECRET
+      };
+      expect(() => loadConfig(sameSecretEnv)).toThrow(/HOLDER_TOKEN_SECRET must not equal OPERATOR_SECRET/);
     });
 
     it('throws when production secrets are shorter than 32 characters', () => {
@@ -47,6 +58,9 @@ describe('Configuration Loader & Validation (loadConfig)', () => {
         );
         expect(() => loadConfig({ ...validProdEnv, GOOGLE_WALLET_SECRET: knownSecret })).toThrow(
           /GOOGLE_WALLET_SECRET must not equal known old default secrets/
+        );
+        expect(() => loadConfig({ ...validProdEnv, HOLDER_TOKEN_SECRET: knownSecret })).toThrow(
+          /HOLDER_TOKEN_SECRET must not equal known old default secrets/
         );
       }
     });

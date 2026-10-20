@@ -8,6 +8,32 @@ const { generateShortCode, hashShortCode } = require('../passes/shortcode.servic
 const { requireRole, checkEventScope } = require('../auth/auth.middleware');
 const { config } = require('../../config');
 const notifierService = require('./notifier.service');
+const rateLimiter = require('../rateLimiter');
+
+function checkTokenRateLimits(req, res) {
+  const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
+
+  const failCheck = rateLimiter.checkFailureLimit(`fail:${clientIp}`, config.rateLimitPassFailsPerMin);
+  if (failCheck.limited) {
+    res.set('Retry-After', String(failCheck.retryAfterSeconds));
+    res.status(429).json({ message: 'Rate limit exceeded for token requests. Please try again later.' });
+    return false;
+  }
+
+  const genCheck = rateLimiter.checkAndRecordGeneral(clientIp, config.rateLimitPassRequestsPerMin);
+  if (genCheck.limited) {
+    res.set('Retry-After', String(genCheck.retryAfterSeconds));
+    res.status(429).json({ message: 'Too many requests. Please try again later.' });
+    return false;
+  }
+
+  return true;
+}
+
+function recordTokenFailure(req) {
+  const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
+  rateLimiter.recordFailure(`fail:${clientIp}`);
+}
 
 // POST /api/tickets (Issue new ticket)
 router.post('/', requireRole('sales', 'agent', 'admin'), (req, res) => {
@@ -166,16 +192,20 @@ router.post('/', requireRole('sales', 'agent', 'admin'), (req, res) => {
   }
 });
 
-// POST /api/tickets/:public_ref/tokens (Mint fresh holder token)
+// POST /api/tickets/:public_ref/tokens (Mint fresh holder token - STAFF ONLY)
 router.post('/:public_ref/tokens', (req, res) => {
   try {
+    if (!checkTokenRateLimits(req, res)) {
+      return;
+    }
+
     const publicRef = req.params.public_ref;
     const ticketRecord = eventsService.getTicketByPublicRef(publicRef);
     if (!ticketRecord) {
+      recordTokenFailure(req);
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
-    let isAuthorized = false;
     let token;
     const authHeader = req.headers['authorization'];
     if (authHeader && typeof authHeader === 'string') {
@@ -184,22 +214,38 @@ router.post('/:public_ref/tokens', (req, res) => {
       token = String(req.headers['x-api-key']).trim();
     }
 
-    if (token) {
+    let actor;
+    if (!config.authEnforced && !token) {
+      actor = { keyLabel: 'dev', role: 'admin', eventIds: undefined };
+    } else if (token) {
       const keyConfig = config.apiKeys ? config.apiKeys[token] : undefined;
-      if (keyConfig && new Set(['sales', 'agent', 'admin']).has(keyConfig.role)) {
-        isAuthorized = true;
+      if (keyConfig) {
+        const allowedRoles = new Set(['sales', 'agent', 'admin']);
+        if (!allowedRoles.has(keyConfig.role)) {
+          recordTokenFailure(req);
+          return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+        }
+        actor = {
+          keyLabel: keyConfig.label || 'unknown',
+          role: keyConfig.role,
+          eventIds: keyConfig.eventIds
+        };
       }
     }
 
-    if (!isAuthorized && token) {
-      const verifyRes = tokenService.verifyHolderToken(token);
-      if (verifyRes.valid && verifyRes.claims.sub === ticketRecord.public_ref && verifyRes.claims.ver === ticketRecord.version) {
-        isAuthorized = true;
-      }
-    }
-
-    if (!isAuthorized) {
+    if (!actor) {
+      recordTokenFailure(req);
       return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    if (!checkEventScope(actor, ticketRecord.eventId)) {
+      recordTokenFailure(req);
+      return res.status(403).json({ message: `Forbidden: Access denied for event ${ticketRecord.eventId}` });
+    }
+
+    if (ticketRecord.status === 'REVOKED') {
+      recordTokenFailure(req);
+      return res.status(403).json({ message: 'Ticket has been revoked', code: 'TICKET_REVOKED' });
     }
 
     const holderToken = tokenService.generateHolderToken({
@@ -218,13 +264,17 @@ router.post('/:public_ref/tokens', (req, res) => {
 // POST /api/tickets/:public_ref/download-token (Mint 5-minute pass download token)
 router.post('/:public_ref/download-token', (req, res) => {
   try {
+    if (!checkTokenRateLimits(req, res)) {
+      return;
+    }
+
     const publicRef = req.params.public_ref;
     const ticketRecord = eventsService.getTicketByPublicRef(publicRef);
     if (!ticketRecord) {
+      recordTokenFailure(req);
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
-    let isAuthorized = false;
     let token;
     const authHeader = req.headers['authorization'];
     if (authHeader && typeof authHeader === 'string') {
@@ -233,22 +283,50 @@ router.post('/:public_ref/download-token', (req, res) => {
       token = String(req.headers['x-api-key']).trim();
     }
 
-    if (token) {
-      const keyConfig = config.apiKeys ? config.apiKeys[token] : undefined;
-      if (keyConfig && new Set(['sales', 'agent', 'verifier', 'admin']).has(keyConfig.role)) {
-        isAuthorized = true;
-      }
-    }
+    let isAuthorized = false;
+    let isStaff = false;
+    let actor;
 
-    if (!isAuthorized && token) {
-      const verifyRes = tokenService.verifyHolderToken(token);
-      if (verifyRes.valid && verifyRes.claims.sub === ticketRecord.public_ref && verifyRes.claims.ver === ticketRecord.version) {
+    if (!config.authEnforced && !token) {
+      actor = { keyLabel: 'dev', role: 'admin', eventIds: undefined };
+      isAuthorized = true;
+      isStaff = true;
+    } else if (token) {
+      const keyConfig = config.apiKeys ? config.apiKeys[token] : undefined;
+      if (keyConfig) {
+        const allowedRoles = new Set(['sales', 'agent', 'admin']);
+        if (!allowedRoles.has(keyConfig.role)) {
+          recordTokenFailure(req);
+          return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+        }
+        actor = {
+          keyLabel: keyConfig.label || 'unknown',
+          role: keyConfig.role,
+          eventIds: keyConfig.eventIds
+        };
         isAuthorized = true;
+        isStaff = true;
+      } else {
+        const verifyRes = tokenService.verifyHolderToken(token);
+        if (verifyRes.valid && verifyRes.claims.sub === ticketRecord.public_ref && verifyRes.claims.ver === ticketRecord.version) {
+          isAuthorized = true;
+        }
       }
     }
 
     if (!isAuthorized) {
+      recordTokenFailure(req);
       return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    if (isStaff && !checkEventScope(actor, ticketRecord.eventId)) {
+      recordTokenFailure(req);
+      return res.status(403).json({ message: `Forbidden: Access denied for event ${ticketRecord.eventId}` });
+    }
+
+    if (ticketRecord.status === 'REVOKED') {
+      recordTokenFailure(req);
+      return res.status(403).json({ message: 'Ticket has been revoked', code: 'TICKET_REVOKED' });
     }
 
     const downloadToken = tokenService.generateDownloadToken({

@@ -39,8 +39,12 @@ router.post('/verify', requireRole('verifier'), (req, res) => {
       const outcome = validationService.verifyShortCodeScan({
         code,
         eventId,
-        verifierLabel: actorLabel
+        verifierLabel: actorLabel,
+        ip: req.ip
       });
+      if (outcome.status === 429) {
+        res.set('Retry-After', '60');
+      }
       return res.status(outcome.status).json(outcome.result);
     }
 
