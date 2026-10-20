@@ -40,22 +40,26 @@ class ValidationService {
   /**
    * Checks rate limit for short-code / lookup failures
    */
-  checkRateLimit({ verifierLabel, eventId }) {
+  checkRateLimit({ verifierLabel, eventId, ip }) {
     this.cleanExpiredFailures();
     const now = Date.now();
     const windowMs = 60000;
 
     const verifierKey = `verifier:${verifierLabel}`;
     const eventKey = `event:${eventId}`;
+    const ipKey = `ip:${ip}`;
+    const verifierIpKey = `verifier_ip:${verifierLabel}:${ip}`;
 
     const verifierFails = (this.failureWindows.get(verifierKey) || []).filter(t => now - t < windowMs).length;
     const eventFails = (this.failureWindows.get(eventKey) || []).filter(t => now - t < windowMs).length;
+    const ipFails = ip ? (this.failureWindows.get(ipKey) || []).filter(t => now - t < windowMs).length : 0;
+    const verifierIpFails = verifierLabel && ip ? (this.failureWindows.get(verifierIpKey) || []).filter(t => now - t < windowMs).length : 0;
 
     const maxVerifier = config.rateLimitVerifierFailsPerMin || 5;
     const maxEvent = config.rateLimitEventFailsPerMin || 30;
 
-    if (verifierFails >= maxVerifier || eventFails >= maxEvent) {
-      return { limited: true, reason: verifierFails >= maxVerifier ? 'verifier_limit' : 'event_limit' };
+    if (verifierFails >= maxVerifier || eventFails >= maxEvent || ipFails >= maxVerifier || verifierIpFails >= maxVerifier) {
+      return { limited: true, reason: 'rate_limited' };
     }
     return { limited: false };
   }
@@ -63,7 +67,7 @@ class ValidationService {
   /**
    * Records a failed attempt for rate limiting
    */
-  recordFailure({ verifierLabel, eventId }) {
+  recordFailure({ verifierLabel, eventId, ip }) {
     const now = Date.now();
     if (verifierLabel) {
       const vKey = `verifier:${verifierLabel}`;
@@ -76,6 +80,18 @@ class ValidationService {
       const eList = this.failureWindows.get(eKey) || [];
       eList.push(now);
       this.failureWindows.set(eKey, eList);
+    }
+    if (ip) {
+      const iKey = `ip:${ip}`;
+      const iList = this.failureWindows.get(iKey) || [];
+      iList.push(now);
+      this.failureWindows.set(iKey, iList);
+    }
+    if (verifierLabel && ip) {
+      const viKey = `verifier_ip:${verifierLabel}:${ip}`;
+      const viList = this.failureWindows.get(viKey) || [];
+      viList.push(now);
+      this.failureWindows.set(viKey, viList);
     }
   }
 
@@ -284,7 +300,7 @@ class ValidationService {
   /**
    * Handles SHORT_CODE scan verification
    */
-  verifyShortCodeScan({ code, eventId, verifierLabel }) {
+  verifyShortCodeScan({ code, eventId, verifierLabel, ip }) {
     if (!code || !eventId) {
       return {
         status: 400,
@@ -292,7 +308,7 @@ class ValidationService {
       };
     }
 
-    const rateCheck = this.checkRateLimit({ verifierLabel, eventId });
+    const rateCheck = this.checkRateLimit({ verifierLabel, eventId, ip });
     if (rateCheck.limited) {
       eventsService.logEvent({
         ticketId: 'unknown',
@@ -314,7 +330,7 @@ class ValidationService {
     );
 
     if (!ticket) {
-      this.recordFailure({ verifierLabel, eventId });
+      this.recordFailure({ verifierLabel, eventId, ip });
       eventsService.logEvent({
         ticketId: 'unknown',
         action: 'CHECKIN_DENIED',

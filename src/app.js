@@ -1,4 +1,5 @@
 const express = require('express');
+const { config } = require('./config');
 const eventsRouter = require('./modules/events/events.router');
 const ticketsRouter = require('./modules/events/tickets.router');
 const passesRouter = require('./modules/passes/passes.router');
@@ -6,6 +7,8 @@ const validationRouter = require('./modules/validation/validation.router');
 const lookupRouter = require('./modules/validation/lookup.router');
 
 const app = express();
+
+app.set('trust proxy', config.trustProxy);
 
 app.use(express.json());
 

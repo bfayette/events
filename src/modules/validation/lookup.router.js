@@ -18,8 +18,9 @@ router.post('/', requireRole('verifier'), (req, res) => {
       return res.status(403).json({ message: `Forbidden: Access denied for event ${eventId}` });
     }
 
-    const rateCheck = validationService.checkRateLimit({ verifierLabel, eventId });
+    const rateCheck = validationService.checkRateLimit({ verifierLabel, eventId, ip: req.ip });
     if (rateCheck.limited) {
+      res.set('Retry-After', '60');
       return res.status(429).json({ message: 'Rate limit exceeded for lookup search', code: 'RATE_LIMITED' });
     }
 
@@ -32,7 +33,7 @@ router.post('/', requireRole('verifier'), (req, res) => {
     });
 
     if (outcome.result && outcome.result.count === 0) {
-      validationService.recordFailure({ verifierLabel, eventId });
+      validationService.recordFailure({ verifierLabel, eventId, ip: req.ip });
     }
 
     return res.status(outcome.status).json(outcome.result);

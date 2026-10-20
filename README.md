@@ -80,6 +80,11 @@ The application uses validated environment configuration. In production environm
 | `AUTH_ENFORCED` | No | `true` in prod, `false` in dev/test | Enforces API key role-based access control middleware. |
 | `API_KEYS` | Yes in prod (min 32 chars per key) | `{}` (dev/test) | JSON map of API keys to `{ role, eventIds, label }`. Roles: `sales`, `verifier`, `agent`, `admin`. |
 | `OPERATOR_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for active operator key receipt and static-code signing. Must not be a known insecure default. |
+| `HOLDER_TOKEN_SECRET` | Yes (min 32 chars) | Random string (dev/test) | HS256 secret for Holder Token & Download Token signing. Must not equal `OPERATOR_SECRET`. |
+| `HOLDER_TOKEN_TTL_DAYS` | No | `7` | Holder Token TTL in days. |
+| `TRUST_PROXY` | No | `false` | Enable Express proxy headers parsing (`req.ip`). |
+| `RATE_LIMIT_PASS_REQUESTS_PER_MIN` | No | `60` | Sliding window request rate limit per IP for pass/token endpoints. |
+| `RATE_LIMIT_PASS_FAILS_PER_MIN` | No | `10` | Sliding window failure/unauthorized rate limit per IP for pass/token endpoints. |
 | `HOLDER_DATA_RETENTION_DAYS` | No | `30` | PII retention window in days after event end date before `purgeExpiredHolderData()` nulls PII. |
 
 See the full table in the existing README for other variables and guidance on generating secrets and key rotation.

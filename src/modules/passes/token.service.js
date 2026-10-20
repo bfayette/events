@@ -2,14 +2,14 @@ const jwt = require('jsonwebtoken');
 const { config } = require('../../config');
 
 class TokenService {
-  constructor() {
-    this.secret = process.env.HOLDER_TOKEN_SECRET || config.operatorSecret;
+  get secret() {
+    return config.holderTokenSecret;
   }
 
   /**
-   * Generates a signed Holder Token JWT (TTL default = 7 days)
+   * Generates a signed Holder Token JWT (TTL default = HOLDER_TOKEN_TTL_DAYS)
    */
-  generateHolderToken({ publicRef, version = 1, holderIdentifier = null, ttlDays = 7 }) {
+  generateHolderToken({ publicRef, version = 1, holderIdentifier = null, ttlDays = config.holderTokenTtlDays || 7 }) {
     if (!publicRef) {
       throw new Error('publicRef is required to generate holder token');
     }
